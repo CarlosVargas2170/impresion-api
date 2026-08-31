@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formulario | Nexus</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #17201f;
+      background: #eef1ef;
+      letter-spacing: 0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px;
+    }
+
+    main {
+      width: min(100%, 430px);
+      display: grid;
+      justify-items: center;
+      gap: 12px;
+    }
+
+    .form-sheet {
+      width: min(100%, 390px);
+      aspect-ratio: 85 / 100;
+      padding: 30px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      color: #111;
+      background: #fff;
+      border: 1px solid #d7ddda;
+      box-shadow: 0 16px 42px rgb(23 32 31 / 14%);
+      text-align: center;
+    }
+
+    .name {
+      font-size: 42px;
+      line-height: 1.04;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .field::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 5px;
+      color: #6b7774;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .surnames {
+      margin-top: 8px;
+      font-size: 26px;
+      line-height: 1.1;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .company {
+      margin-top: 14px;
+      font-size: 21px;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .job-title {
+      margin-top: 7px;
+      font-size: 18px;
+      line-height: 1.15;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .email {
+      margin-top: 26px;
+      color: #53615e;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 16px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .qr {
+      width: 116px;
+      height: 116px;
+      margin-top: 15px;
+      image-rendering: pixelated;
+    }
+
+    .status {
+      min-height: 20px;
+      color: #596663;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .status.error { color: #b42318; }
+
+    @media (max-width: 430px) {
+      .form-sheet { padding: 24px 18px; }
+      .name { font-size: 34px; }
+      .surnames { font-size: 22px; }
+      .company { font-size: 18px; }
+      .job-title { font-size: 16px; }
+      .email { font-size: 14px; }
+      .qr { width: 96px; height: 96px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section id="formSheet" class="form-sheet" aria-label="Formulario recibido" hidden>
+      <div id="name" class="name field" data-label="Nombre"></div>
+      <div id="surnames" class="surnames field" data-label="Apellidos"></div>
+      <div id="company" class="company field" data-label="Empresa"></div>
+      <div id="jobTitle" class="job-title field" data-label="Cargo"></div>
+      <div id="email" class="email field" data-label="Correo"></div>
+      <img id="qr" class="qr" alt="Codigo QR de este formulario">
+    </section>
+    <div id="status" class="status" role="status">Cargando formulario...</div>
+  </main>
+
+  <script>
+    const formId = decodeURIComponent(location.pathname.split("/").filter(Boolean).at(-1));
+    const formSheet = document.querySelector("#formSheet");
+    const status = document.querySelector("#status");
+    const name = document.querySelector("#name");
+    const surnames = document.querySelector("#surnames");
+    const company = document.querySelector("#company");
+    const jobTitle = document.querySelector("#jobTitle");
+    const email = document.querySelector("#email");
+    const qr = document.querySelector("#qr");
+
+    async function loadForm() {
+      try {
+        const response = await fetch(`/api/forms/${encodeURIComponent(formId)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Formulario no encontrado");
+
+        name.textContent = data.first_name;
+        name.style.fontSize = data.first_name.length > 20
+          ? "28px"
+          : data.first_name.length > 14 ? "35px" : "42px";
+        surnames.textContent = [data.paternal_surname, data.maternal_surname]
+          .filter(Boolean).join(" ");
+        company.textContent = data.company || "";
+        company.hidden = !data.company;
+        jobTitle.textContent = data.job_title || "";
+        jobTitle.hidden = !data.job_title;
+        email.textContent = data.email || "";
+        email.hidden = !data.email;
+        qr.src = `/api/forms/${encodeURIComponent(formId)}/qr`;
+        formSheet.hidden = false;
+        status.textContent = "";
+      } catch (error) {
+        status.className = "status error";
+        status.textContent = error.message;
+      }
+    }
+
+    loadForm();
+  </script>
+</body>
+</html>
