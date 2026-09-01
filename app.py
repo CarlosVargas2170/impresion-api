@@ -15,7 +15,14 @@ import win32ui
 from fastapi import FastAPI, HTTPException, Path as PathParameter, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from PIL import Image, ImageDraw, ImageFont, ImageWin
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 TAGS_METADATA = [
@@ -248,6 +255,53 @@ class ImpresionEnviada(BaseModel):
     print_preview_url: str = Field(description="URL de la imagen exacta enviada a imprimir.")
 
 
+class ConfiguracionTira(BaseModel):
+    """Medidas y calibracion persistente de la media hoja Carta."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    paper_width_mm: float = Field(default=107.95, gt=50, le=220)
+    paper_height_mm: float = Field(default=279.4, gt=100, le=500)
+    badge_width_mm: float = Field(default=100, gt=20, le=220)
+    badge_height_mm: float = Field(default=85, gt=20, le=160)
+    global_offset_x_mm: float = Field(default=0, ge=-30, le=30)
+    global_offset_y_mm: float = Field(default=0, ge=-30, le=30)
+
+    @model_validator(mode="after")
+    def validar_distribucion(self) -> "ConfiguracionTira":
+        if self.badge_width_mm > self.paper_width_mm:
+            raise ValueError("El ancho del gafete no puede superar el ancho de la tira")
+        if self.badge_height_mm * 3 > self.paper_height_mm:
+            raise ValueError("Los tres gafetes no caben en el alto de la tira")
+        return self
+
+
+class ImpresionPosicion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: int = Field(ge=1, le=3, description="Posicion de la tira: 1, 2 o 3.")
+    offset_x_mm: float = Field(default=0, ge=-20, le=20)
+    offset_y_mm: float = Field(default=0, ge=-20, le=20)
+    printer_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("printer_name", mode="before")
+    @classmethod
+    def limpiar_impresora(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return None
+        return value.strip() or None
+
+
+class ImpresionPosicionEnviada(BaseModel):
+    ok: bool
+    message: str
+    printer: str
+    id: str
+    position: int
+    offset_x_mm: float
+    offset_y_mm: float
+
+
 class RespuestaError(BaseModel):
     detail: str = Field(description="Descripcion del error.")
 
@@ -276,6 +330,44 @@ def inicializar_db() -> None:
                 )
                 """
             )
+            conexion.execute(
+                """
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+
+
+CLAVE_CONFIGURACION_TIRA = "print_layout"
+
+
+def obtener_configuracion_tira() -> ConfiguracionTira:
+    with closing(conectar_db()) as conexion:
+        fila = conexion.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (CLAVE_CONFIGURACION_TIRA,),
+        ).fetchone()
+    if fila is None:
+        return ConfiguracionTira()
+    return ConfiguracionTira.model_validate_json(fila["value"])
+
+
+def guardar_configuracion_tira(
+    configuracion: ConfiguracionTira,
+) -> ConfiguracionTira:
+    contenido = configuracion.model_dump_json()
+    with closing(conectar_db()) as conexion:
+        with conexion:
+            conexion.execute(
+                """
+                INSERT INTO settings (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (CLAVE_CONFIGURACION_TIRA, contenido),
+            )
+    return configuracion
 
 
 def guardar_formulario(data: Formulario) -> tuple[str, str]:
@@ -462,13 +554,76 @@ def generar_imagen_impresion(data: Formulario, form_id: str) -> Image.Image:
     return imagen
 
 
+def generar_imagen_tira(
+    data: Formulario,
+    form_id: str,
+    position: int,
+    configuracion: ConfiguracionTira,
+    offset_x_mm: float = 0,
+    offset_y_mm: float = 0,
+) -> Image.Image:
+    """Genera la media hoja Carta y ubica un gafete horizontal en un espacio."""
+
+    if position not in (1, 2, 3):
+        raise ValueError("La posicion debe ser 1, 2 o 3")
+
+    tira = Image.new(
+        "RGB",
+        (
+            mm_a_px(configuracion.paper_width_mm),
+            mm_a_px(configuracion.paper_height_mm),
+        ),
+        "white",
+    )
+
+    pagina = generar_imagen_impresion(data, form_id)
+    ancho_sticker = mm_a_px(STICKER_ANCHO_MM)
+    izquierda = (pagina.width - ancho_sticker) // 2
+    gafete = pagina.crop((izquierda, 0, izquierda + ancho_sticker, pagina.height))
+    gafete = gafete.rotate(90, expand=True)
+    gafete = gafete.resize(
+        (
+            mm_a_px(configuracion.badge_width_mm),
+            mm_a_px(configuracion.badge_height_mm),
+        ),
+        Image.Resampling.LANCZOS,
+    )
+
+    separacion = (
+        configuracion.paper_height_mm - configuracion.badge_height_mm * 3
+    ) / 4
+    x_mm = (
+        (configuracion.paper_width_mm - configuracion.badge_width_mm) / 2
+        + configuracion.global_offset_x_mm
+        + offset_x_mm
+    )
+    y_mm = (
+        separacion * position
+        + configuracion.badge_height_mm * (position - 1)
+        + configuracion.global_offset_y_mm
+        + offset_y_mm
+    )
+
+    x = mm_a_px(x_mm)
+    y = mm_a_px(y_mm)
+    if x < 0 or y < 0 or x + gafete.width > tira.width or y + gafete.height > tira.height:
+        raise ValueError("Los ajustes desplazan el gafete fuera de la tira")
+    tira.paste(gafete, (x, y))
+    return tira
+
+
 def imagen_a_png(imagen: Image.Image) -> bytes:
     contenido = BytesIO()
     imagen.save(contenido, format="PNG", dpi=(DPI_RENDER, DPI_RENDER))
     return contenido.getvalue()
 
 
-def imprimir_windows(imagen: Image.Image, printer_name: str | None = None) -> str:
+def imprimir_windows(
+    imagen: Image.Image,
+    printer_name: str | None = None,
+    papel_ancho_mm: float = PAPEL_ANCHO_MM,
+    papel_alto_mm: float = PAPEL_ALTO_MM,
+) -> str:
     nombre_impresora = printer_name or win32print.GetDefaultPrinter()
     nombre_normalizado = nombre_impresora.casefold()
     if "pdf" in nombre_normalizado or "onenote" in nombre_normalizado:
@@ -486,11 +641,11 @@ def imprimir_windows(imagen: Image.Image, printer_name: str | None = None) -> st
         alto_fisico = dc.GetDeviceCaps(win32con.PHYSICALHEIGHT)
         ancho_mm = ancho_fisico * 25.4 / dpi_x
         alto_mm = alto_fisico * 25.4 / dpi_y
-        if abs(ancho_mm - PAPEL_ANCHO_MM) > 5 or abs(alto_mm - PAPEL_ALTO_MM) > 5:
+        if abs(ancho_mm - papel_ancho_mm) > 5 or abs(alto_mm - papel_alto_mm) > 5:
             raise ValueError(
                 "El controlador reporta papel "
                 f"{ancho_mm:.0f} x {alto_mm:.0f} mm; configura "
-                f"{PAPEL_ANCHO_MM} x {PAPEL_ALTO_MM} mm en orientacion vertical"
+                f"{papel_ancho_mm:g} x {papel_alto_mm:g} mm en orientacion vertical"
             )
 
         dc.StartDoc("Formulario Nexus")
@@ -790,6 +945,112 @@ def listar_impresoras() -> dict[str, list[str] | str | None]:
         raise HTTPException(
             status_code=503,
             detail=f"No se pudieron consultar las impresoras: {error}",
+        ) from error
+
+
+@app.get(
+    "/print-layout",
+    tags=["Impresion"],
+    summary="Consultar la configuracion de la tira",
+    description=(
+        "Devuelve las medidas persistidas de la media hoja Carta, del gafete "
+        "horizontal y de la calibracion general."
+    ),
+    response_model=ConfiguracionTira,
+    operation_id="consultar_configuracion_tira",
+)
+def consultar_configuracion_tira() -> ConfiguracionTira:
+    return obtener_configuracion_tira()
+
+
+@app.put(
+    "/print-layout",
+    tags=["Impresion"],
+    summary="Ajustar la configuracion de la tira",
+    description=(
+        "Guarda las medidas y los desplazamientos generales en milimetros. "
+        "Los tres gafetes deben caber dentro de la tira."
+    ),
+    response_model=ConfiguracionTira,
+    responses={422: RESPUESTA_VALIDACION},
+    operation_id="ajustar_configuracion_tira",
+)
+def ajustar_configuracion_tira(
+    configuracion: ConfiguracionTira,
+) -> ConfiguracionTira:
+    return guardar_configuracion_tira(configuracion)
+
+
+@app.post(
+    "/api/forms/{form_id}/print-position",
+    tags=["Impresion"],
+    summary="Imprimir un formulario en una posicion de la tira",
+    description=(
+        "Genera una pagina completa para media hoja Carta y coloca el formulario "
+        "guardado en la posicion 1, 2 o 3. Los desplazamientos permiten corregir "
+        "variaciones de alimentacion para una impresion concreta."
+    ),
+    response_model=ImpresionPosicionEnviada,
+    responses={
+        400: {
+            "model": RespuestaError,
+            "description": "El gafete queda fuera de la tira o el papel no coincide.",
+        },
+        404: {
+            "model": RespuestaError,
+            "description": "No existe el formulario indicado.",
+        },
+        422: RESPUESTA_VALIDACION,
+        500: {
+            "model": RespuestaError,
+            "description": "No se pudo enviar el trabajo al controlador de Windows.",
+        },
+    },
+    operation_id="imprimir_formulario_en_posicion",
+)
+def imprimir_formulario_en_posicion(
+    form_id: Annotated[
+        str,
+        PathParameter(description="Identificador del formulario guardado."),
+    ],
+    ajuste: ImpresionPosicion,
+) -> dict[str, bool | float | int | str]:
+    registro = obtener_formulario(form_id)
+    if registro is None:
+        raise HTTPException(status_code=404, detail="Formulario no encontrado")
+
+    try:
+        configuracion = obtener_configuracion_tira()
+        data = formulario_desde_registro(registro)
+        imagen = generar_imagen_tira(
+            data,
+            form_id,
+            ajuste.position,
+            configuracion,
+            ajuste.offset_x_mm,
+            ajuste.offset_y_mm,
+        )
+        impresora = imprimir_windows(
+            imagen,
+            ajuste.printer_name,
+            configuracion.paper_width_mm,
+            configuracion.paper_height_mm,
+        )
+        return {
+            "ok": True,
+            "message": f"Impresion enviada a la posicion {ajuste.position}",
+            "printer": impresora,
+            "id": form_id,
+            "position": ajuste.position,
+            "offset_x_mm": ajuste.offset_x_mm,
+            "offset_y_mm": ajuste.offset_y_mm,
+        }
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo imprimir: {error}",
         ) from error
 
 

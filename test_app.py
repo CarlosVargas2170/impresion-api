@@ -4,12 +4,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
+from PIL import Image, ImageChops
 
 import app as api
 from app import (
+    ConfiguracionTira,
     Formulario,
     generar_formulario,
     generar_imagen_impresion,
+    generar_imagen_tira,
     imagen_a_png,
     imprimir_windows,
     previsualizar,
@@ -136,6 +139,51 @@ class ImpresionTests(unittest.TestCase):
         dc.DeleteDC.assert_called_once_with()
 
 
+class ImpresionTiraTests(unittest.TestCase):
+    def formulario(self):
+        return Formulario(**FormularioTests().datos_validos())
+
+    def contenido_impreso(self, imagen):
+        fondo = Image.new("RGB", imagen.size, "white")
+        return ImageChops.difference(imagen, fondo).getbbox()
+
+    def test_genera_media_carta_con_tres_posiciones_distintas(self):
+        configuracion = ConfiguracionTira()
+        imagenes = [
+            generar_imagen_tira(
+                self.formulario(), "formulario-de-prueba", posicion, configuracion
+            )
+            for posicion in (1, 2, 3)
+        ]
+
+        tamano_esperado = (
+            api.mm_a_px(configuracion.paper_width_mm),
+            api.mm_a_px(configuracion.paper_height_mm),
+        )
+        self.assertTrue(all(imagen.size == tamano_esperado for imagen in imagenes))
+
+        cajas = [self.contenido_impreso(imagen) for imagen in imagenes]
+        self.assertTrue(all(caja is not None for caja in cajas))
+        self.assertLess(cajas[0][1], cajas[1][1])
+        self.assertLess(cajas[1][1], cajas[2][1])
+        self.assertLessEqual(cajas[0][3], cajas[1][1])
+        self.assertLessEqual(cajas[1][3], cajas[2][1])
+
+    def test_rechaza_ajuste_que_saca_el_gafete_de_la_tira(self):
+        with self.assertRaisesRegex(ValueError, "fuera de la tira"):
+            generar_imagen_tira(
+                self.formulario(),
+                "formulario-de-prueba",
+                1,
+                ConfiguracionTira(),
+                offset_x_mm=20,
+            )
+
+    def test_rechaza_configuracion_donde_no_caben_tres_gafetes(self):
+        with self.assertRaises(ValidationError):
+            ConfiguracionTira(paper_height_mm=240, badge_height_mm=85)
+
+
 class AlmacenamientoTests(unittest.TestCase):
     def test_guarda_consulta_y_genera_qr(self):
         with tempfile.TemporaryDirectory() as temporal:
@@ -158,6 +206,20 @@ class AlmacenamientoTests(unittest.TestCase):
                 self.assertEqual(respuesta.media_type, "image/png")
                 self.assertTrue(respuesta.body.startswith(b"\x89PNG"))
 
+    def test_guarda_y_recupera_configuracion_de_tira(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                esperada = ConfiguracionTira(global_offset_x_mm=1.5)
+                api.guardar_configuracion_tira(esperada)
+
+                recuperada = api.obtener_configuracion_tira()
+                self.assertEqual(recuperada, esperada)
+
 
 class DocumentacionOpenAPITests(unittest.TestCase):
     def test_documenta_todos_los_endpoints(self):
@@ -179,8 +241,11 @@ class DocumentacionOpenAPITests(unittest.TestCase):
                 ("GET", "/api/forms/{form_id}"),
                 ("GET", "/api/forms/{form_id}/qr"),
                 ("GET", "/api/forms/{form_id}/print.png"),
+                ("POST", "/api/forms/{form_id}/print-position"),
                 ("GET", "/forms/{form_id}"),
                 ("GET", "/printers"),
+                ("GET", "/print-layout"),
+                ("PUT", "/print-layout"),
                 ("POST", "/print"),
             },
         )
