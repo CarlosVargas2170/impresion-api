@@ -149,6 +149,41 @@ class ImpresionTests(unittest.TestCase):
         dc.EndDoc.assert_called_once_with()
         dc.DeleteDC.assert_called_once_with()
 
+    @patch("app.ImageWin.Dib")
+    @patch("app.win32ui.CreateDC")
+    def test_acepta_controlador_configurado_en_carta_completa(self, crear_dc, dib):
+        dc = MagicMock()
+        crear_dc.return_value = dc
+        capacidades = {
+            api.win32con.LOGPIXELSX: 300,
+            api.win32con.LOGPIXELSY: 300,
+            api.win32con.PHYSICALWIDTH: api.mm_a_px(216),
+            api.win32con.PHYSICALHEIGHT: api.mm_a_px(279.4),
+            api.win32con.PHYSICALOFFSETX: 0,
+            api.win32con.PHYSICALOFFSETY: 0,
+        }
+        dc.GetDeviceCaps.side_effect = capacidades.__getitem__
+        dc.GetHandleOutput.return_value = "handle"
+
+        resultado = imprimir_windows(
+            self.imagen_prueba(),
+            "EPSON L3310 Series",
+            107.95,
+            279.4,
+        )
+
+        self.assertEqual(resultado, "EPSON L3310 Series")
+        dc.StartDoc.assert_called_once_with("Formulario Nexus")
+        dib.return_value.draw.assert_called_once()
+        destino = dib.return_value.draw.call_args.args[1]
+        self.assertGreater(destino[0], 0)
+        self.assertAlmostEqual(
+            destino[2] - destino[0],
+            api.mm_a_px(107.95),
+            delta=1,
+        )
+        dc.EndDoc.assert_called_once_with()
+
 
 class ImpresionTiraTests(unittest.TestCase):
     def formulario(self):
@@ -352,11 +387,13 @@ class DocumentacionOpenAPITests(unittest.TestCase):
                 ("POST", "/api/forms/{form_id}/print-position"),
                 ("GET", "/forms/{form_id}"),
                 ("GET", "/printers"),
+                ("GET", "/bluetooth/ports"),
                 ("GET", "/print-layout"),
                 ("PUT", "/print-layout"),
                 ("GET", "/print-state"),
                 ("PUT", "/print-state"),
                 ("POST", "/print"),
+                ("POST", "/print/bluetooth"),
             },
         )
 

@@ -1,0 +1,9 @@
+{
+  "print_all": false,
+  "max_records": 1000,
+  "record_order": "newest",
+  "poll_seconds": 7,
+  "simulate": false,
+  "transport": "windows",
+  "printer_name": "EPSON L3310 Series"
+}

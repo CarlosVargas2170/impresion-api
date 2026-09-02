@@ -1,3 +1,4 @@
 {
-  "public_base_url": "http://192.168.21.83:9102"
+  "public_base_url": "http://192.168.21.83:9102",
+  "url_db_postgres": "postgresql://avatars:Avatars2026*@18.220.0.127:5432/avatars"
 }

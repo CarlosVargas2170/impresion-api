@@ -1,6 +1,8 @@
 fastapi==0.141.1
 pydantic[email]==2.13.5
 Pillow==12.3.0
+psycopg[binary]==3.2.10
+pyserial==3.5
 pywin32==312; sys_platform == "win32"
 qrcode==8.2
 uvicorn==0.52.4

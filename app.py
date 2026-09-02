@@ -5,7 +5,7 @@ from contextlib import closing
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import qrcode
@@ -22,6 +22,12 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+)
+from thermal_printer import (
+    DEFAULT_BAUDRATE,
+    generar_imagen_termica,
+    imprimir_bluetooth as enviar_bluetooth,
+    listar_puertos_seriales,
 )
 
 
@@ -248,6 +254,18 @@ class FormularioConsultado(DatosFormulario):
 class ListaImpresoras(BaseModel):
     printers: list[str] = Field(description="Impresoras locales y conectadas disponibles.")
     default: str | None = Field(description="Impresora predeterminada de Windows.")
+
+
+class PuertoSerial(BaseModel):
+    device: str = Field(description="Puerto serie asignado por Windows, por ejemplo COM5.")
+    description: str | None = Field(description="Descripcion publicada por el dispositivo.")
+    hwid: str | None = Field(description="Identificador de hardware informado por Windows.")
+
+
+class ListaPuertosSeriales(BaseModel):
+    ports: list[PuertoSerial] = Field(
+        description="Puertos COM disponibles, incluidos los Bluetooth emparejados."
+    )
 
 
 class ImpresionEnviada(BaseModel):
@@ -940,14 +958,6 @@ def imprimir_windows(
         dpi_y = dc.GetDeviceCaps(win32con.LOGPIXELSY)
         ancho_fisico = dc.GetDeviceCaps(win32con.PHYSICALWIDTH)
         alto_fisico = dc.GetDeviceCaps(win32con.PHYSICALHEIGHT)
-        ancho_mm = ancho_fisico * 25.4 / dpi_x
-        alto_mm = alto_fisico * 25.4 / dpi_y
-        if abs(ancho_mm - papel_ancho_mm) > 5 or abs(alto_mm - papel_alto_mm) > 5:
-            raise ValueError(
-                "El controlador reporta papel "
-                f"{ancho_mm:.0f} x {alto_mm:.0f} mm; configura "
-                f"{papel_ancho_mm:g} x {papel_alto_mm:g} mm en orientacion vertical"
-            )
 
         dc.StartDoc("Formulario Nexus")
         documento_iniciado = True
@@ -955,11 +965,21 @@ def imprimir_windows(
 
         offset_x = dc.GetDeviceCaps(win32con.PHYSICALOFFSETX)
         offset_y = dc.GetDeviceCaps(win32con.PHYSICALOFFSETY)
+        ancho_destino = min(
+            ancho_fisico,
+            round(papel_ancho_mm * dpi_x / 25.4),
+        )
+        alto_destino = min(
+            alto_fisico,
+            round(papel_alto_mm * dpi_y / 25.4),
+        )
+        izquierda = (ancho_fisico - ancho_destino) // 2 - offset_x
+        arriba = (alto_fisico - alto_destino) // 2 - offset_y
         destino = (
-            -offset_x,
-            -offset_y,
-            ancho_fisico - offset_x,
-            alto_fisico - offset_y,
+            izquierda,
+            arriba,
+            izquierda + ancho_destino,
+            arriba + alto_destino,
         )
         ImageWin.Dib(imagen).draw(dc.GetHandleOutput(), destino)
 
@@ -1251,6 +1271,34 @@ def listar_impresoras() -> dict[str, list[str] | str | None]:
 
 
 @app.get(
+    "/bluetooth/ports",
+    tags=["Impresion"],
+    summary="Listar puertos serie para impresoras Bluetooth",
+    description=(
+        "Devuelve los puertos COM visibles en Windows. Luego de emparejar la PT-210, "
+        "su puerto serie Bluetooth debe aparecer en esta lista."
+    ),
+    response_description="Puertos serie detectados.",
+    response_model=ListaPuertosSeriales,
+    responses={
+        503: {
+            "model": RespuestaError,
+            "description": "Windows no pudo enumerar los puertos serie.",
+        }
+    },
+    operation_id="listar_puertos_bluetooth",
+)
+def listar_puertos_bluetooth() -> dict[str, object]:
+    try:
+        return {"ports": listar_puertos_seriales()}
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No se pudieron consultar los puertos serie: {error}",
+        ) from error
+
+
+@app.get(
     "/print-layout",
     tags=["Impresion"],
     summary="Consultar la configuracion de la tira",
@@ -1405,7 +1453,7 @@ def imprimir_formulario_en_posicion(
         422: RESPUESTA_VALIDACION,
         400: {
             "model": RespuestaError,
-            "description": "La impresora es virtual o tiene otro tamaño de papel.",
+            "description": "La impresora seleccionada es virtual.",
         },
         500: {
             "model": RespuestaError,
@@ -1427,26 +1475,57 @@ def imprimir(
         ),
     ] = True,
 ) -> dict[str, bool | int | str | None]:
+    return procesar_impresion(data, simulate=simulate)
+
+
+def procesar_impresion(
+    data: Formulario,
+    simulate: bool = True,
+    transport: Literal["windows", "bluetooth"] = "windows",
+    bluetooth_port: str | None = None,
+    bluetooth_baudrate: int = DEFAULT_BAUDRATE,
+) -> dict[str, bool | int | str | None]:
+    """Punto de entrada compartido por HTTP y el worker de PostgreSQL."""
+
     job_id: str | None = None
     try:
         form_id, _ = guardar_formulario(data)
         job_id, strip_id, position, siguiente, completa = reservar_posicion(form_id)
-        configuracion = obtener_configuracion_tira()
-        imagen = generar_imagen_tira(
-            data,
-            form_id,
-            position,
-            configuracion,
-        )
+        if transport == "windows":
+            configuracion = obtener_configuracion_tira()
+            imagen = generar_imagen_tira(
+                data,
+                form_id,
+                position,
+                configuracion,
+            )
+        elif transport == "bluetooth":
+            configuracion = None
+            imagen = generar_imagen_termica(data)
+            if not bluetooth_port:
+                raise ValueError(
+                    "Indica el puerto COM asignado a la impresora Bluetooth"
+                )
+        else:
+            raise ValueError("El transporte debe ser windows o bluetooth")
+
         impresora = None
         if simulate:
             actualizar_trabajo_impresion(job_id, "simulated")
-        else:
+        elif transport == "windows":
+            assert configuracion is not None
             impresora = imprimir_windows(
                 imagen,
                 data.printer_name,
                 configuracion.paper_width_mm,
                 configuracion.paper_height_mm,
+            )
+            actualizar_trabajo_impresion(job_id, "sent")
+        else:
+            impresora = enviar_bluetooth(
+                imagen,
+                bluetooth_port,
+                bluetooth_baudrate,
             )
             actualizar_trabajo_impresion(job_id, "sent")
         return {
@@ -1476,6 +1555,56 @@ def imprimir(
             status_code=500,
             detail=f"No se pudo imprimir: {error}",
         ) from error
+
+
+@app.post(
+    "/print/bluetooth",
+    tags=["Impresion"],
+    summary="Imprimir un gafete en una termica Bluetooth",
+    description=(
+        "Renderiza los mismos datos del gafete para la GOOJPRT PT-210 de 48 mm y "
+        "los envia como imagen ESC/POS al puerto COM Bluetooth asignado por Windows."
+    ),
+    response_description="Trabajo termico simulado o enviado por Bluetooth.",
+    response_model=ImpresionAutomaticaEnviada,
+    responses={
+        400: {
+            "model": RespuestaError,
+            "description": "El puerto COM o los parametros son invalidos.",
+        },
+        422: RESPUESTA_VALIDACION,
+        500: {
+            "model": RespuestaError,
+            "description": "No se pudo abrir el puerto o enviar ESC/POS.",
+        },
+    },
+    operation_id="imprimir_gafete_bluetooth",
+)
+def imprimir_gafete_bluetooth(
+    data: Formulario,
+    port: Annotated[
+        str,
+        Query(
+            pattern=r"^COM\d+$",
+            description="Puerto serie Bluetooth asignado por Windows, por ejemplo COM5.",
+        ),
+    ],
+    baudrate: Annotated[
+        int,
+        Query(ge=1200, le=921600, description="Velocidad del puerto serie."),
+    ] = DEFAULT_BAUDRATE,
+    simulate: Annotated[
+        bool,
+        Query(description="Si es true, renderiza y reserva sin enviar al puerto COM."),
+    ] = True,
+) -> dict[str, bool | int | str | None]:
+    return procesar_impresion(
+        data,
+        simulate=simulate,
+        transport="bluetooth",
+        bluetooth_port=port,
+        bluetooth_baudrate=baudrate,
+    )
 
 
 if __name__ == "__main__":
