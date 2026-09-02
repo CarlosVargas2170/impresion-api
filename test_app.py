@@ -210,10 +210,10 @@ class ImpresionTiraTests(unittest.TestCase):
 
         cajas = [self.contenido_impreso(imagen) for imagen in imagenes]
         self.assertTrue(all(caja is not None for caja in cajas))
-        self.assertLess(cajas[0][1], cajas[1][1])
-        self.assertLess(cajas[1][1], cajas[2][1])
-        self.assertLessEqual(cajas[0][3], cajas[1][1])
-        self.assertLessEqual(cajas[1][3], cajas[2][1])
+        self.assertGreater(cajas[0][1], cajas[1][1])
+        self.assertGreater(cajas[1][1], cajas[2][1])
+        self.assertLessEqual(cajas[2][3], cajas[1][1])
+        self.assertLessEqual(cajas[1][3], cajas[0][1])
 
     def test_rechaza_ajuste_que_saca_el_gafete_de_la_tira(self):
         with self.assertRaisesRegex(ValueError, "fuera de la tira"):
@@ -228,6 +228,24 @@ class ImpresionTiraTests(unittest.TestCase):
     def test_rechaza_configuracion_donde_no_caben_tres_gafetes(self):
         with self.assertRaises(ValidationError):
             ConfiguracionTira(paper_height_mm=240, badge_height_mm=85)
+
+    def test_padding_desplaza_el_contenido_hacia_la_derecha(self):
+        sin_padding = generar_imagen_tira(
+            self.formulario(),
+            "formulario-de-prueba",
+            2,
+            ConfiguracionTira(form_padding_left_mm=0),
+        )
+        con_padding = generar_imagen_tira(
+            self.formulario(),
+            "formulario-de-prueba",
+            2,
+            ConfiguracionTira(form_padding_left_mm=4),
+        )
+
+        caja_sin_padding = self.contenido_impreso(sin_padding)
+        caja_con_padding = self.contenido_impreso(con_padding)
+        self.assertGreater(caja_con_padding[0], caja_sin_padding[0])
 
     @patch("app.imprimir_windows", return_value="EPSON L3310 Series")
     def test_endpoint_imprime_formulario_guardado_en_posicion(self, imprimir):

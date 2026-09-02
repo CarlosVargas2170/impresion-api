@@ -4,6 +4,13 @@ El proyecto expone la API FastAPI existente y un worker independiente que consul
 continuamente la tabla `persons` de PostgreSQL. El worker toma registros pendientes,
 los imprime en las posiciones 1, 2 y 3 del flujo actual y actualiza su estado.
 
+La secuencia física de la tira avanza desde abajo hacia arriba: posición 1 inferior,
+posición 2 central y posición 3 superior. Después se crea una nueva tira.
+
+La configuración de la tira incluye `form_padding_left_mm`, con `4 mm` por defecto,
+para separar el contenido del borde izquierdo. Puede ajustarse mediante `PUT /print-layout`
+sin desplazar la hoja completa.
+
 ## Preparación
 
 Instala las dependencias:

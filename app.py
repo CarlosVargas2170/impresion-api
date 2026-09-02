@@ -289,6 +289,7 @@ class ConfiguracionTira(BaseModel):
                 "paper_height_mm": 279.4,
                 "badge_width_mm": 100,
                 "badge_height_mm": 85,
+                "form_padding_left_mm": 4,
                 "global_offset_x_mm": 0,
                 "global_offset_y_mm": 0,
             }
@@ -299,6 +300,12 @@ class ConfiguracionTira(BaseModel):
     paper_height_mm: float = Field(default=279.4, gt=100, le=500, description="Alto fisico de la tira en milimetros.")
     badge_width_mm: float = Field(default=100, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
     badge_height_mm: float = Field(default=85, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
+    form_padding_left_mm: float = Field(
+        default=4,
+        ge=0,
+        le=15,
+        description="Margen interno que desplaza el contenido del gafete hacia la derecha.",
+    )
     global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
     global_offset_y_mm: float = Field(default=0, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
@@ -907,6 +914,11 @@ def generar_imagen_tira(
         ),
         Image.Resampling.LANCZOS,
     )
+    padding_izquierdo = mm_a_px(configuracion.form_padding_left_mm)
+    if padding_izquierdo:
+        contenido_desplazado = Image.new("RGB", gafete.size, "white")
+        contenido_desplazado.paste(gafete, (padding_izquierdo, 0))
+        gafete = contenido_desplazado
 
     separacion = (
         configuracion.paper_height_mm - configuracion.badge_height_mm * 3
@@ -916,9 +928,10 @@ def generar_imagen_tira(
         + configuracion.global_offset_x_mm
         + offset_x_mm
     )
+    posicion_fisica = 4 - position
     y_mm = (
-        separacion * position
-        + configuracion.badge_height_mm * (position - 1)
+        separacion * posicion_fisica
+        + configuracion.badge_height_mm * (posicion_fisica - 1)
         + configuracion.global_offset_y_mm
         + offset_y_mm
     )
