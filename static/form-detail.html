@@ -97,13 +97,6 @@
       overflow-wrap: anywhere;
     }
 
-    .qr {
-      width: 116px;
-      height: 116px;
-      margin-top: 15px;
-      image-rendering: pixelated;
-    }
-
     .status {
       min-height: 20px;
       color: #596663;
@@ -120,7 +113,6 @@
       .company { font-size: 18px; }
       .job-title { font-size: 16px; }
       .email { font-size: 14px; }
-      .qr { width: 96px; height: 96px; }
     }
   </style>
 </head>
@@ -132,7 +124,6 @@
       <div id="company" class="company field" data-label="Empresa"></div>
       <div id="jobTitle" class="job-title field" data-label="Cargo"></div>
       <div id="email" class="email field" data-label="Correo"></div>
-      <img id="qr" class="qr" alt="Codigo QR de este formulario">
     </section>
     <div id="status" class="status" role="status">Cargando formulario...</div>
   </main>
@@ -146,7 +137,6 @@
     const company = document.querySelector("#company");
     const jobTitle = document.querySelector("#jobTitle");
     const email = document.querySelector("#email");
-    const qr = document.querySelector("#qr");
 
     async function loadForm() {
       try {
@@ -166,7 +156,6 @@
         jobTitle.hidden = !data.job_title;
         email.textContent = data.email || "";
         email.hidden = !data.email;
-        qr.src = `/api/forms/${encodeURIComponent(formId)}/qr`;
         formSheet.hidden = false;
         status.textContent = "";
       } catch (error) {

@@ -104,6 +104,29 @@
       box-shadow: 0 0 0 3px rgb(8 125 107 / 15%);
     }
 
+    input[type="checkbox"] {
+      width: 18px;
+      min-height: 18px;
+      margin: 0;
+      accent-color: #087d6b;
+    }
+
+    .mode-control {
+      grid-template-columns: 18px 1fr;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      background: #e3f1ed;
+      border: 1px solid #add3c8;
+      border-radius: 6px;
+    }
+
+    .mode-control small {
+      grid-column: 2;
+      color: #53615e;
+      font-weight: 500;
+    }
+
     .actions {
       grid-column: 1 / -1;
       display: flex;
@@ -121,7 +144,7 @@
       border: 0;
       border-radius: 5px;
       font-weight: 800;
-      cursor: pointer;
+      cursor: default;
     }
 
     button:hover { background: #066957; }
@@ -151,20 +174,6 @@
       gap: 12px;
     }
 
-    .size-controls {
-      width: 100%;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-
-    .size-controls label {
-      font-size: 11px;
-      text-transform: uppercase;
-    }
-
-    .size-controls input { min-height: 38px; }
-
     .preview-label {
       width: 100%;
       display: flex;
@@ -183,85 +192,102 @@
       text-align: right;
     }
 
-    .paper {
-      width: min(100%, 360px);
-      aspect-ratio: var(--label-width, 58) / var(--label-height, 30);
-      margin: 0;
-      padding: 30px 24px;
-      overflow: hidden;
-      color: #111;
+    .strip {
+      width: min(100%, 270px);
+      aspect-ratio: 107.95 / 279.4;
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 10px;
+      padding: 14px 10px;
       background: #fff;
-      border-top: 1px solid #d4d8d6;
-      box-shadow: 0 14px 36px rgb(23 32 31 / 16%);
-      font-family: Arial, Helvetica, sans-serif;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
+      border: 1px solid #cbd3d0;
+      box-shadow: 0 18px 42px rgb(23 32 31 / 18%);
     }
 
-    .printed-name {
-      font-size: 38px;
-      line-height: 1.05;
-      font-weight: 700;
-      overflow-wrap: anywhere;
+    .strip-slot {
+      position: relative;
+      min-height: 0;
+      padding: 8px;
+      overflow: hidden;
+      color: #17201f;
+      background: #fafbfa;
+      border: 1px dashed #aeb9b6;
+      border-radius: 3px;
+      font-family: Arial, Helvetica, sans-serif;
+      text-align: left;
+      cursor: pointer;
     }
 
-    .printed-field::before {
-      content: attr(data-label);
-      display: block;
-      margin-bottom: 4px;
-      color: #6b7774;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 9px;
-      font-weight: 600;
-      line-height: 1;
+    .strip-slot:hover { background: #f4f8f6; }
+    .strip-slot.active {
+      background: #f4fbf8;
+      border: 2px solid #087d6b;
+      box-shadow: 0 0 0 3px rgb(8 125 107 / 12%);
+    }
+    .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
+
+    .slot-number {
+      position: absolute;
+      top: 5px;
+      right: 6px;
+      z-index: 2;
+      color: #71807c;
+      font: 700 9px/1 system-ui, sans-serif;
+      letter-spacing: .08em;
       text-transform: uppercase;
     }
 
-    .printed-surnames {
-      margin-top: 6px;
-      font-size: 24px;
-      font-weight: 650;
-      overflow-wrap: anywhere;
+    .badge-preview {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 72%;
+      height: 112%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transform: translate(-50%, -50%) rotate(90deg);
+      transform-origin: center;
     }
 
-    .printed-company {
-      margin-top: 10px;
-      font-size: 20px;
-      font-weight: 600;
-      overflow-wrap: anywhere;
+    .badge-content {
+      min-width: 0;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+    }
+    .badge-empty {
+      color: #9ba6a3;
+      font: 700 11px/1.2 system-ui, sans-serif;
+      text-transform: uppercase;
+      transform: rotate(-90deg);
     }
 
-    .printed-job-title {
-      margin-top: 6px;
-      font-size: 17px;
-      font-weight: 650;
+    .badge-name {
+      display: block;
+      font-size: 26px;
+      line-height: 1;
+      font-weight: 800;
       overflow-wrap: anywhere;
     }
+    .badge-surnames { display: block; margin-top: 5px; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-company { display: block; margin-top: 10px; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-job { display: block; margin-top: 4px; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-email { display: block; margin-top: 9px; color: #53615e; font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
 
-    .printed-email {
-      margin-top: 24px;
+    .simulation-note {
+      width: min(100%, 270px);
+      padding: 10px 12px;
       color: #53615e;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 15px;
-      font-weight: 700;
-      overflow-wrap: anywhere;
-    }
-
-    .printed-qr {
-      display: grid;
-      justify-items: center;
-      margin-top: 14px;
-      color: #41504d;
-      font-size: 10px;
-      text-decoration: none;
-    }
-
-    .printed-qr img {
-      width: 104px;
-      height: 104px;
-      image-rendering: pixelated;
+      background: #e7ecea;
+      border-radius: 5px;
+      font-size: 11px;
+      line-height: 1.4;
+      text-align: center;
     }
 
     @media (max-width: 820px) {
@@ -280,7 +306,7 @@
       form { grid-template-columns: 1fr; }
       .full { grid-column: auto; }
       .actions { grid-column: auto; align-items: flex-start; flex-direction: column; }
-      .paper { padding: 16px 12px; }
+      .strip { width: min(100%, 250px); }
     }
   </style>
 </head>
@@ -342,52 +368,61 @@
             <option value="">Impresora predeterminada</option>
           </select>
         </label>
+        <label>
+          Siguiente posicion automatica
+          <select id="targetPosition" disabled>
+            <option value="1">Posicion 1 · superior</option>
+            <option value="2">Posicion 2 · central</option>
+            <option value="3">Posicion 3 · inferior</option>
+          </select>
+        </label>
+        <label class="mode-control">
+          <input id="simulationMode" type="checkbox" checked>
+          Modo simulacion
+          <small>Registra y muestra el resultado sin enviar nada a una impresora.</small>
+        </label>
         <div class="actions">
-          <button id="saveButton" type="button">Guardar y generar QR</button>
-          <button id="printButton" class="secondary" type="submit">Imprimir gafete</button>
+          <button id="saveButton" type="button">Guardar formulario</button>
+          <button id="printButton" class="secondary" type="submit">Simular impresion</button>
           <span id="status" role="status" aria-live="polite"></span>
         </div>
       </form>
     </section>
 
     <aside class="preview-area" aria-label="Vista previa del papel">
-      <div class="preview-label"><span>Formulario</span><span id="sizeLabel">85 × 100 mm</span></div>
-      <div class="sheet-summary">Hoja completa: 109 × 306 mm · 3 formularios</div>
-      <div class="size-controls">
-        <label>Ancho (mm)<input id="labelWidth" type="number" value="85" min="20" max="150" step="1"></label>
-        <label>Alto por formulario (mm)<input id="labelHeight" type="number" value="100" min="15" max="150" step="1"></label>
+      <div class="preview-label"><span>Tira vertical</span><span>107,95 × 279,4 mm</span></div>
+      <div class="sheet-summary">3 cuadros · formulario girado en vertical</div>
+      <div id="strip" class="strip" aria-label="Media hoja Carta con tres posiciones">
+        <button class="strip-slot active" type="button" data-position="1" aria-label="Seleccionar posicion 1">
+          <span class="slot-number">Posicion 1</span>
+          <span class="badge-preview"></span>
+        </button>
+        <button class="strip-slot" type="button" data-position="2" aria-label="Seleccionar posicion 2">
+          <span class="slot-number">Posicion 2</span>
+          <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
+        </button>
+        <button class="strip-slot" type="button" data-position="3" aria-label="Seleccionar posicion 3">
+          <span class="slot-number">Posicion 3</span>
+          <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
+        </button>
       </div>
-      <div id="paper" class="paper">
-        <div id="printedName" class="printed-name printed-field" data-label="Nombre">Ana</div>
-        <div id="printedSurnames" class="printed-surnames printed-field" data-label="Apellidos">Perez Lopez</div>
-        <div id="printedCompany" class="printed-company printed-field" data-label="Empresa">Nexus</div>
-        <div id="printedJobTitle" class="printed-job-title printed-field" data-label="Cargo">Gerente comercial</div>
-        <div id="printedEmail" class="printed-email printed-field" data-label="Correo">ana.perez@ejemplo.com</div>
-        <a id="printedQr" class="printed-qr" href="#" target="_blank" rel="noreferrer" hidden>
-          <img id="qrImage" alt="Codigo QR del formulario">
-        </a>
-      </div>
+      <div class="simulation-note">Selecciona uno de los tres cuadros. En simulacion se guardara el formulario y se ocupara visualmente esa posicion.</div>
     </aside>
   </main>
 
   <script>
     const form = document.querySelector("#formulario");
-    const paper = document.querySelector("#paper");
     const status = document.querySelector("#status");
     const saveButton = document.querySelector("#saveButton");
     const printButton = document.querySelector("#printButton");
     const printer = document.querySelector("#printer");
-    const printedName = document.querySelector("#printedName");
-    const printedSurnames = document.querySelector("#printedSurnames");
-    const printedCompany = document.querySelector("#printedCompany");
-    const printedJobTitle = document.querySelector("#printedJobTitle");
-    const printedEmail = document.querySelector("#printedEmail");
-    const printedQr = document.querySelector("#printedQr");
-    const qrImage = document.querySelector("#qrImage");
-    const labelWidth = document.querySelector("#labelWidth");
-    const labelHeight = document.querySelector("#labelHeight");
-    const sizeLabel = document.querySelector("#sizeLabel");
-    let previewTimer;
+    const targetPosition = document.querySelector("#targetPosition");
+    const simulationMode = document.querySelector("#simulationMode");
+    const slots = [...document.querySelectorAll(".strip-slot")];
+    const printedSlots = [null, null, null];
+    let savedPreview = null;
+    let currentStripId = null;
+    let sending = false;
 
     function payload() {
       const data = Object.fromEntries(new FormData(form).entries());
@@ -400,41 +435,81 @@
       return data;
     }
 
-    async function updatePreview() {
-      if (!form.checkValidity()) return;
-      try {
-        const response = await fetch("/preview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload())
-        });
-        if (!response.ok) throw new Error("Datos incompletos o invalidos");
-        await response.text();
-        const data = payload();
-        printedName.textContent = data.first_name;
-        printedName.style.fontSize = data.first_name.length > 20
-          ? "26px"
-          : data.first_name.length > 14 ? "32px" : "38px";
-        printedSurnames.textContent = [data.paternal_surname, data.maternal_surname]
-          .filter(Boolean).join(" ");
-        printedCompany.textContent = data.company || "";
-        printedCompany.hidden = !data.company;
-        printedJobTitle.textContent = data.job_title || "";
-        printedJobTitle.hidden = !data.job_title;
-        printedEmail.textContent = data.email || "";
-        printedEmail.hidden = !data.email;
-      } catch (error) {
-        status.className = "error";
-        status.textContent = "No se pudo generar la vista previa.";
+    function escapeHtml(value = "") {
+      return String(value).replace(/[&<>'"]/g, character => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+      })[character]);
+    }
+
+    function badgeMarkup(data) {
+      if (!data?.first_name && !data?.paternal_surname) {
+        return '<span class="badge-empty">Disponible</span>';
+      }
+      const surnames = [data.paternal_surname, data.maternal_surname]
+        .filter(Boolean).join(" ");
+      return `
+        <span class="badge-content">
+          <span class="badge-name">${escapeHtml(data.first_name)}</span>
+          <span class="badge-surnames">${escapeHtml(surnames)}</span>
+          ${data.company ? `<span class="badge-company">${escapeHtml(data.company)}</span>` : ""}
+          ${data.job_title ? `<span class="badge-job">${escapeHtml(data.job_title)}</span>` : ""}
+          ${data.email ? `<span class="badge-email">${escapeHtml(data.email)}</span>` : ""}
+        </span>`;
+    }
+
+    function renderStrip() {
+      const selected = Number(targetPosition.value);
+      const liveData = { ...payload(), ...savedPreview };
+      for (const slot of slots) {
+        const position = Number(slot.dataset.position);
+        const printed = printedSlots[position - 1];
+        const data = printed || (position === selected ? liveData : null);
+        slot.classList.toggle("active", position === selected);
+        slot.classList.toggle("printed", Boolean(printed));
+        slot.setAttribute("aria-pressed", String(position === selected));
+        slot.querySelector(".badge-preview").innerHTML = badgeMarkup(data);
       }
     }
 
-    function updateSize() {
-      const width = Math.max(20, Number(labelWidth.value) || 85);
-      const height = Math.max(15, Number(labelHeight.value) || 100);
-      paper.style.setProperty("--label-width", width);
-      paper.style.setProperty("--label-height", height);
-      sizeLabel.textContent = `${width} × ${height} mm`;
+    function errorMessage(data, fallback) {
+      if (typeof data?.detail === "string") return data.detail;
+      if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg).join(". ");
+      return fallback;
+    }
+
+    async function saveForm() {
+      const response = await fetch("/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload())
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(errorMessage(data, "No se pudo guardar"));
+      return data;
+    }
+
+    async function loadPrintState() {
+      if (sending) return;
+      try {
+        const response = await fetch("/print-state");
+        if (!response.ok) return;
+        const state = await response.json();
+        currentStripId = state.strip_id;
+        printedSlots.fill(null);
+        for (const item of state.positions) {
+          printedSlots[item.position - 1] = item.data;
+        }
+        targetPosition.value = String(state.next_position);
+        renderStrip();
+      } catch (_) {
+        // La vista local sigue funcionando aunque falle la sincronizacion temporal.
+      }
+    }
+
+    function updateMode() {
+      const simulated = simulationMode.checked;
+      printer.disabled = simulated;
+      printButton.textContent = simulated ? "Simular impresion" : "Enviar a impresora";
     }
 
     async function loadPrinters() {
@@ -457,13 +532,11 @@
     }
 
     form.addEventListener("input", () => {
-      printedQr.hidden = true;
-      clearTimeout(previewTimer);
-      previewTimer = setTimeout(updatePreview, 180);
+      savedPreview = null;
+      renderStrip();
     });
 
-    labelWidth.addEventListener("input", updateSize);
-    labelHeight.addEventListener("input", updateSize);
+    simulationMode.addEventListener("change", updateMode);
 
     saveButton.addEventListener("click", async () => {
       if (!form.reportValidity()) return;
@@ -471,18 +544,11 @@
       status.className = "";
       status.textContent = "Guardando...";
       try {
-        const response = await fetch("/forms", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload())
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || "No se pudo guardar");
-        qrImage.src = `${data.qr_url}?v=${Date.now()}`;
-        printedQr.href = data.view_url;
-        printedQr.hidden = false;
+        const data = await saveForm();
+        savedPreview = { saved: true };
+        renderStrip();
         status.className = "success";
-        status.textContent = "Formulario recibido y QR generado";
+        status.textContent = "Formulario guardado correctamente";
       } catch (error) {
         status.className = "error";
         status.textContent = error.message;
@@ -494,30 +560,49 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
+      sending = true;
       printButton.disabled = true;
       status.className = "";
-      status.textContent = "Enviando...";
+      status.textContent = simulationMode.checked ? "Generando simulacion..." : "Enviando...";
       try {
-        const response = await fetch("/print", {
+        const response = await fetch(`/print?simulate=${simulationMode.checked}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload())
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || "No se pudo imprimir");
+        const result = await response.json();
+        if (!response.ok) throw new Error(errorMessage(result, "No se pudo procesar"));
+
+        const previewData = { ...payload() };
+        if (currentStripId !== result.strip_id) {
+          printedSlots.fill(null);
+          currentStripId = result.strip_id;
+        }
+        printedSlots[result.position - 1] = previewData;
+        savedPreview = null;
+        targetPosition.value = String(result.next_position);
+        renderStrip();
         status.className = "success";
-        status.textContent = `Enviado a ${data.printer}`;
+        status.textContent = result.simulated
+          ? `Simulacion asignada a la posicion ${result.position}.`
+          : `Trabajo enviado en la posicion ${result.position}.`;
+        if (result.strip_completed) {
+          status.textContent += " Tira completa; la siguiente solicitud inicia otra tira.";
+        }
       } catch (error) {
         status.className = "error";
         status.textContent = error.message;
       } finally {
+        sending = false;
         printButton.disabled = false;
       }
     });
 
     loadPrinters();
-    updateSize();
-    updatePreview();
+    updateMode();
+    renderStrip();
+    loadPrintState();
+    setInterval(loadPrintState, 2000);
   </script>
 </body>
 </html>

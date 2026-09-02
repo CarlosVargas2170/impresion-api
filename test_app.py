@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ import app as api
 from app import (
     ConfiguracionTira,
     Formulario,
+    ImpresionPosicion,
     generar_formulario,
     generar_imagen_impresion,
     generar_imagen_tira,
@@ -98,6 +100,15 @@ class FormularioTests(unittest.TestCase):
         self.assertTrue(imagen.getbbox())
         self.assertTrue(imagen_a_png(imagen).startswith(b"\x89PNG"))
 
+    @patch("app.qrcode.QRCode")
+    def test_imagen_de_impresion_no_incluye_qr(self, crear_qr):
+        generar_imagen_impresion(
+            Formulario(**self.datos_validos()),
+            "formulario-de-prueba",
+        )
+
+        crear_qr.assert_not_called()
+
 
 class ImpresionTests(unittest.TestCase):
     def imagen_prueba(self):
@@ -183,6 +194,103 @@ class ImpresionTiraTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ConfiguracionTira(paper_height_mm=240, badge_height_mm=85)
 
+    @patch("app.imprimir_windows", return_value="EPSON L3310 Series")
+    def test_endpoint_imprime_formulario_guardado_en_posicion(self, imprimir):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                form_id, _ = api.guardar_formulario(self.formulario())
+
+                respuesta = api.imprimir_formulario_en_posicion(
+                    form_id,
+                    ImpresionPosicion(
+                        position=2,
+                        offset_x_mm=1,
+                        printer_name="EPSON L3310 Series",
+                    ),
+                )
+
+        self.assertTrue(respuesta["ok"])
+        self.assertEqual(respuesta["position"], 2)
+        argumentos = imprimir.call_args.args
+        self.assertEqual(argumentos[1], "EPSON L3310 Series")
+        self.assertEqual(argumentos[2:], (107.95, 279.4))
+
+    @patch("app.imprimir_windows")
+    def test_post_print_asigna_1_2_3_y_abre_otra_tira(self, imprimir):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                respuestas = [
+                    api.imprimir(self.formulario(), simulate=True)
+                    for _ in range(4)
+                ]
+
+        self.assertEqual([item["position"] for item in respuestas], [1, 2, 3, 1])
+        self.assertEqual(len({item["strip_id"] for item in respuestas[:3]}), 1)
+        self.assertNotEqual(respuestas[2]["strip_id"], respuestas[3]["strip_id"])
+        self.assertTrue(respuestas[2]["strip_completed"])
+        self.assertTrue(all(item["simulated"] for item in respuestas))
+        imprimir.assert_not_called()
+
+    def test_solicitudes_simultaneas_no_repiten_posicion_en_una_tira(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                with ThreadPoolExecutor(max_workers=6) as ejecutor:
+                    respuestas = list(
+                        ejecutor.map(
+                            lambda _: api.imprimir(self.formulario(), simulate=True),
+                            range(6),
+                        )
+                    )
+
+        posiciones_por_tira = {}
+        for respuesta in respuestas:
+            posiciones_por_tira.setdefault(respuesta["strip_id"], set()).add(
+                respuesta["position"]
+            )
+        self.assertEqual(len(posiciones_por_tira), 2)
+        self.assertTrue(
+            all(posiciones == {1, 2, 3} for posiciones in posiciones_por_tira.values())
+        )
+
+    def test_endpoint_permite_corregir_siguiente_posicion(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                inicial = api.obtener_estado_posiciones()
+                corregido = api.configurar_estado_posiciones(
+                    api.AjusteEstadoPosiciones(next_position=3)
+                )
+                nueva = api.configurar_estado_posiciones(
+                    api.AjusteEstadoPosiciones(
+                        next_position=2,
+                        start_new_strip=True,
+                    )
+                )
+
+        self.assertEqual(inicial["next_position"], 1)
+        self.assertEqual(corregido["next_position"], 3)
+        self.assertEqual(nueva["next_position"], 2)
+        self.assertNotEqual(corregido["strip_id"], nueva["strip_id"])
+
 
 class AlmacenamientoTests(unittest.TestCase):
     def test_guarda_consulta_y_genera_qr(self):
@@ -246,6 +354,8 @@ class DocumentacionOpenAPITests(unittest.TestCase):
                 ("GET", "/printers"),
                 ("GET", "/print-layout"),
                 ("PUT", "/print-layout"),
+                ("GET", "/print-state"),
+                ("PUT", "/print-state"),
                 ("POST", "/print"),
             },
         )
@@ -273,6 +383,28 @@ class DocumentacionOpenAPITests(unittest.TestCase):
             "200"
         ]
         self.assertIn("text/plain", respuesta_preview["content"])
+
+    def test_documenta_flujo_automatico_y_simulacion(self):
+        esquema = api.app.openapi()
+
+        self.assertEqual(esquema["info"]["version"], "1.1.0")
+        operacion = esquema["paths"]["/print"]["post"]
+        parametro_simulacion = next(
+            parametro
+            for parametro in operacion["parameters"]
+            if parametro["name"] == "simulate"
+        )
+        self.assertIn("sin usar Windows", parametro_simulacion["description"])
+        self.assertTrue(parametro_simulacion["schema"]["default"])
+
+        ejemplo = esquema["components"]["schemas"][
+            "ImpresionAutomaticaEnviada"
+        ]["example"]
+        self.assertEqual(ejemplo["position"], 1)
+        self.assertEqual(ejemplo["next_position"], 2)
+
+        ajuste = esquema["components"]["schemas"]["AjusteEstadoPosiciones"]
+        self.assertIn("examples", ajuste)
 
 
 if __name__ == "__main__":

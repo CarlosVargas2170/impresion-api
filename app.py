@@ -12,7 +12,7 @@ import qrcode
 import win32con
 import win32print
 import win32ui
-from fastapi import FastAPI, HTTPException, Path as PathParameter, status
+from fastapi import FastAPI, HTTPException, Path as PathParameter, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from PIL import Image, ImageDraw, ImageFont, ImageWin
 from pydantic import (
@@ -53,13 +53,18 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="API de impresion de gafetes Nexus",
-    version="1.0.0",
+    version="1.1.0",
     description=(
-        "API para registrar asistentes, consultar sus formularios, generar codigos QR "
-        "y enviar gafetes en formato ESC/POS a una impresora termica de Windows.\n\n"
-        "La documentacion interactiva permite probar todos los endpoints. Los campos "
-        "no definidos en el contrato son rechazados y las fechas deben enviarse en "
-        "formato ISO 8601."
+        "API local para registrar asistentes y asignar automaticamente sus gafetes a "
+        "las tres posiciones de una tira vertical de media hoja Carta.\n\n"
+        "### Flujo recomendado\n"
+        "1. Envia el formulario a `POST /print`.\n"
+        "2. La API reserva en SQLite las posiciones `1`, `2`, `3` y luego abre otra tira.\n"
+        "3. Usa `GET /print-state` para consultar la secuencia.\n"
+        "4. Usa `PUT /print-state` para corregir una posicion o iniciar otra tira.\n\n"
+        "`POST /print` funciona en simulacion por defecto. Para usar el controlador "
+        "grafico de Windows envia `simulate=false`. Los campos desconocidos son "
+        "rechazados y las fechas deben usar formato ISO 8601."
     ),
     openapi_tags=TAGS_METADATA,
     docs_url="/docs",
@@ -258,14 +263,26 @@ class ImpresionEnviada(BaseModel):
 class ConfiguracionTira(BaseModel):
     """Medidas y calibracion persistente de la media hoja Carta."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "paper_width_mm": 107.95,
+                "paper_height_mm": 279.4,
+                "badge_width_mm": 100,
+                "badge_height_mm": 85,
+                "global_offset_x_mm": 0,
+                "global_offset_y_mm": 0,
+            }
+        },
+    )
 
-    paper_width_mm: float = Field(default=107.95, gt=50, le=220)
-    paper_height_mm: float = Field(default=279.4, gt=100, le=500)
-    badge_width_mm: float = Field(default=100, gt=20, le=220)
-    badge_height_mm: float = Field(default=85, gt=20, le=160)
-    global_offset_x_mm: float = Field(default=0, ge=-30, le=30)
-    global_offset_y_mm: float = Field(default=0, ge=-30, le=30)
+    paper_width_mm: float = Field(default=107.95, gt=50, le=220, description="Ancho fisico de la tira en milimetros.")
+    paper_height_mm: float = Field(default=279.4, gt=100, le=500, description="Alto fisico de la tira en milimetros.")
+    badge_width_mm: float = Field(default=100, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
+    badge_height_mm: float = Field(default=85, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
+    global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
+    global_offset_y_mm: float = Field(default=0, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
     @model_validator(mode="after")
     def validar_distribucion(self) -> "ConfiguracionTira":
@@ -277,7 +294,17 @@ class ConfiguracionTira(BaseModel):
 
 
 class ImpresionPosicion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "position": 2,
+                "offset_x_mm": 1.5,
+                "offset_y_mm": -2,
+                "printer_name": "EPSON L3310 Series",
+            }
+        },
+    )
 
     position: int = Field(ge=1, le=3, description="Posicion de la tira: 1, 2 o 3.")
     offset_x_mm: float = Field(default=0, ge=-20, le=20)
@@ -300,6 +327,85 @@ class ImpresionPosicionEnviada(BaseModel):
     position: int
     offset_x_mm: float
     offset_y_mm: float
+
+
+class RegistroPosicion(BaseModel):
+    position: int
+    form_id: str
+    status: str
+    data: DatosFormulario
+
+
+class EstadoPosiciones(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "strip_id": "c7bfbc4c-f970-49b1-a2f8-e1dd2450cdda",
+                "next_position": 2,
+                "positions": [
+                    {
+                        "position": 1,
+                        "form_id": "a18a826c-e6cd-4b83-b70e-470811a6a2f3",
+                        "status": "simulated",
+                        "data": {
+                            "first_name": "Ana",
+                            "paternal_surname": "Perez",
+                            "company": "Nexus",
+                        },
+                    }
+                ],
+            }
+        }
+    )
+
+    strip_id: str = Field(description="UUID de la tira actual o de la ultima completada.")
+    next_position: int = Field(description="Posicion que reservara la siguiente solicitud a POST /print.")
+    positions: list[RegistroPosicion] = Field(description="Ultimo trabajo registrado en cada posicion de la tira.")
+
+
+class AjusteEstadoPosiciones(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"next_position": 2, "start_new_strip": False},
+                {"next_position": 1, "start_new_strip": True},
+            ]
+        },
+    )
+
+    next_position: int = Field(default=1, ge=1, le=3, description="Siguiente posicion que debe reservarse.")
+    start_new_strip: bool = Field(default=False, description="Si es true, abandona la tira activa y crea otra.")
+
+
+class ImpresionAutomaticaEnviada(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ok": True,
+                "message": "Simulacion asignada a la posicion 1",
+                "simulated": True,
+                "printer": None,
+                "id": "a18a826c-e6cd-4b83-b70e-470811a6a2f3",
+                "strip_id": "c7bfbc4c-f970-49b1-a2f8-e1dd2450cdda",
+                "position": 1,
+                "next_position": 2,
+                "strip_completed": False,
+                "view_url": "http://192.168.21.83:9101/forms/a18a826c-e6cd-4b83-b70e-470811a6a2f3",
+            }
+        }
+    )
+
+    ok: bool = Field(description="Indica que el formulario y la posicion fueron registrados.")
+    message: str = Field(description="Resultado legible de la operacion.")
+    simulated: bool = Field(description="Indica que no se contacto al controlador de Windows.")
+    printer: str | None = Field(description="Impresora utilizada; null durante una simulacion.")
+    id: str = Field(description="UUID del formulario guardado.")
+    strip_id: str = Field(description="UUID de la tira asignada.")
+    position: int = Field(description="Posicion reservada: 1, 2 o 3.")
+    next_position: int = Field(description="Posicion prevista para la siguiente solicitud.")
+    strip_completed: bool = Field(description="Indica que esta solicitud completo la posicion 3.")
+    view_url: str = Field(description="Vista publica del formulario guardado.")
 
 
 class RespuestaError(BaseModel):
@@ -335,6 +441,32 @@ def inicializar_db() -> None:
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                )
+                """
+            )
+            conexion.execute(
+                """
+                CREATE TABLE IF NOT EXISTS print_strips (
+                    id TEXT PRIMARY KEY,
+                    next_position INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
+                )
+                """
+            )
+            conexion.execute(
+                """
+                CREATE TABLE IF NOT EXISTS print_jobs (
+                    id TEXT PRIMARY KEY,
+                    strip_id TEXT NOT NULL,
+                    form_id TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    error TEXT,
+                    FOREIGN KEY (strip_id) REFERENCES print_strips(id),
+                    FOREIGN KEY (form_id) REFERENCES forms(id)
                 )
                 """
             )
@@ -412,6 +544,184 @@ def formulario_desde_registro(registro: dict[str, object]) -> Formulario:
         if campo != "printer_name"
     }
     return Formulario.model_validate(datos)
+
+
+def _crear_tira(
+    conexion: sqlite3.Connection,
+    next_position: int = 1,
+) -> str:
+    strip_id = str(uuid4())
+    creado = datetime.now().astimezone().isoformat(timespec="seconds")
+    conexion.execute(
+        """
+        INSERT INTO print_strips (id, next_position, status, created_at)
+        VALUES (?, ?, 'active', ?)
+        """,
+        (strip_id, next_position, creado),
+    )
+    return strip_id
+
+
+def _estado_tira(
+    conexion: sqlite3.Connection,
+    strip_id: str,
+) -> dict[str, object]:
+    tira = conexion.execute(
+        "SELECT next_position FROM print_strips WHERE id = ?",
+        (strip_id,),
+    ).fetchone()
+    trabajos = conexion.execute(
+        """
+        SELECT trabajo.position, trabajo.form_id, trabajo.status, formulario.payload
+        FROM print_jobs AS trabajo
+        JOIN forms AS formulario ON formulario.id = trabajo.form_id
+        WHERE trabajo.strip_id = ?
+          AND trabajo.rowid = (
+              SELECT MAX(ultimo.rowid)
+              FROM print_jobs AS ultimo
+              WHERE ultimo.strip_id = trabajo.strip_id
+                AND ultimo.position = trabajo.position
+          )
+        ORDER BY trabajo.position
+        """,
+        (strip_id,),
+    ).fetchall()
+    return {
+        "strip_id": strip_id,
+        "next_position": int(tira["next_position"]),
+        "positions": [
+            {
+                "position": int(trabajo["position"]),
+                "form_id": trabajo["form_id"],
+                "status": trabajo["status"],
+                "data": json.loads(trabajo["payload"]),
+            }
+            for trabajo in trabajos
+        ],
+    }
+
+
+def obtener_estado_posiciones() -> dict[str, object]:
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            tira = conexion.execute(
+                """
+                SELECT id FROM print_strips
+                WHERE status = 'active'
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ).fetchone()
+            if tira:
+                strip_id = tira["id"]
+            else:
+                ultima = conexion.execute(
+                    """
+                    SELECT id FROM print_strips
+                    WHERE status = 'completed'
+                    ORDER BY completed_at DESC LIMIT 1
+                    """
+                ).fetchone()
+                strip_id = ultima["id"] if ultima else _crear_tira(conexion)
+            estado = _estado_tira(conexion, strip_id)
+            conexion.commit()
+            return estado
+        except Exception:
+            conexion.rollback()
+            raise
+
+
+def ajustar_estado_posiciones(
+    ajuste: AjusteEstadoPosiciones,
+) -> dict[str, object]:
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            tira = conexion.execute(
+                "SELECT id FROM print_strips WHERE status = 'active' LIMIT 1"
+            ).fetchone()
+            if ajuste.start_new_strip and tira:
+                conexion.execute(
+                    "UPDATE print_strips SET status = 'abandoned' WHERE id = ?",
+                    (tira["id"],),
+                )
+                tira = None
+
+            if tira is None:
+                strip_id = _crear_tira(conexion, ajuste.next_position)
+            else:
+                strip_id = tira["id"]
+                conexion.execute(
+                    "UPDATE print_strips SET next_position = ? WHERE id = ?",
+                    (ajuste.next_position, strip_id),
+                )
+            estado = _estado_tira(conexion, strip_id)
+            conexion.commit()
+            return estado
+        except Exception:
+            conexion.rollback()
+            raise
+
+
+def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            tira = conexion.execute(
+                "SELECT id, next_position FROM print_strips WHERE status = 'active' LIMIT 1"
+            ).fetchone()
+            if tira is None:
+                strip_id = _crear_tira(conexion)
+                position = 1
+            else:
+                strip_id = tira["id"]
+                position = int(tira["next_position"])
+
+            job_id = str(uuid4())
+            creado = datetime.now().astimezone().isoformat(timespec="seconds")
+            conexion.execute(
+                """
+                INSERT INTO print_jobs
+                    (id, strip_id, form_id, position, status, created_at)
+                VALUES (?, ?, ?, ?, 'reserved', ?)
+                """,
+                (job_id, strip_id, form_id, position, creado),
+            )
+
+            completa = position == 3
+            siguiente = 1 if completa else position + 1
+            if completa:
+                conexion.execute(
+                    """
+                    UPDATE print_strips
+                    SET next_position = 1, status = 'completed', completed_at = ?
+                    WHERE id = ?
+                    """,
+                    (creado, strip_id),
+                )
+            else:
+                conexion.execute(
+                    "UPDATE print_strips SET next_position = ? WHERE id = ?",
+                    (siguiente, strip_id),
+                )
+            conexion.commit()
+            return job_id, strip_id, position, siguiente, completa
+        except Exception:
+            conexion.rollback()
+            raise
+
+
+def actualizar_trabajo_impresion(
+    job_id: str,
+    estado: str,
+    error: str | None = None,
+) -> None:
+    with closing(conectar_db()) as conexion:
+        with conexion:
+            conexion.execute(
+                "UPDATE print_jobs SET status = ?, error = ? WHERE id = ?",
+                (estado, error, job_id),
+            )
 
 
 inicializar_db()
@@ -528,29 +838,20 @@ def generar_imagen_impresion(data: Formulario, form_id: str) -> Image.Image:
         if parte
     )
 
-    dibujar_campo(dibujo, "Nombre", data.first_name, 4.5, 7.5, 27, 15, True)
-    dibujar_campo(dibujo, "Apellidos", apellidos, 19, 22, 18, 11, True)
-    dibujar_campo(dibujo, "Empresa", data.company, 32.5, 35.5, 14, 9, True)
-    dibujar_campo(dibujo, "Cargo", data.job_title, 43.5, 46.5, 12, 8, True)
+    dibujar_campo(dibujo, "Nombre", data.first_name, 4.5, 7.5, 30, 18, True)
+    dibujar_campo(dibujo, "Apellidos", apellidos, 22, 25, 22, 14, True)
+    dibujar_campo(dibujo, "Empresa", data.company, 39, 42, 18, 11, True)
+    dibujar_campo(dibujo, "Cargo", data.job_title, 54, 57, 16, 10, True)
     dibujar_campo(
         dibujo,
         "Correo",
         str(data.email) if data.email else None,
-        55,
-        58,
-        11,
-        7,
+        69,
+        72,
+        13,
+        8,
         True,
     )
-
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=4)
-    qr.add_data(url_formulario(form_id))
-    qr.make(fit=True)
-    imagen_qr = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    lado_qr = mm_a_px(25)
-    imagen_qr = imagen_qr.resize((lado_qr, lado_qr), Image.Resampling.NEAREST)
-    x_qr = (imagen.width - lado_qr) // 2
-    imagen.paste(imagen_qr, (x_qr, mm_a_px(70)))
     return imagen
 
 
@@ -844,8 +1145,9 @@ def qr_formulario(
     tags=["Formularios"],
     summary="Descargar la imagen exacta de impresion",
     description=(
-        "Genera a 300 DPI la pagina grafica de 109 x 100 mm que se enviara al "
-        "controlador de la impresora. No crea ningun trabajo de impresion."
+        "Genera a 300 DPI la pagina individual heredada de 109 x 100 mm. No reserva "
+        "una posicion ni representa la tira completa; para el flujo actual usa "
+        "POST /print y consulta GET /print-state."
     ),
     responses={
         200: {
@@ -953,8 +1255,8 @@ def listar_impresoras() -> dict[str, list[str] | str | None]:
     tags=["Impresion"],
     summary="Consultar la configuracion de la tira",
     description=(
-        "Devuelve las medidas persistidas de la media hoja Carta, del gafete "
-        "horizontal y de la calibracion general."
+        "Devuelve las medidas persistidas de la media hoja Carta, de cada cuadro y "
+        "de la calibracion general aplicada a las tres posiciones."
     ),
     response_model=ConfiguracionTira,
     operation_id="consultar_configuracion_tira",
@@ -979,6 +1281,39 @@ def ajustar_configuracion_tira(
     configuracion: ConfiguracionTira,
 ) -> ConfiguracionTira:
     return guardar_configuracion_tira(configuracion)
+
+
+@app.get(
+    "/print-state",
+    tags=["Impresion"],
+    summary="Consultar la tira activa y su siguiente posicion",
+    description=(
+        "Devuelve la tira activa o la ultima tira completada, la siguiente posicion "
+        "automatica y los formularios asignados a sus tres cuadros."
+    ),
+    response_model=EstadoPosiciones,
+    operation_id="consultar_estado_posiciones",
+)
+def consultar_estado_posiciones() -> dict[str, object]:
+    return obtener_estado_posiciones()
+
+
+@app.put(
+    "/print-state",
+    tags=["Impresion"],
+    summary="Corregir la siguiente posicion o iniciar otra tira",
+    description=(
+        "Permite corregir manualmente la proxima posicion. Con start_new_strip=true "
+        "abandona la tira activa y comienza una nueva."
+    ),
+    response_model=EstadoPosiciones,
+    responses={422: RESPUESTA_VALIDACION},
+    operation_id="ajustar_estado_posiciones",
+)
+def configurar_estado_posiciones(
+    ajuste: AjusteEstadoPosiciones,
+) -> dict[str, object]:
+    return ajustar_estado_posiciones(ajuste)
 
 
 @app.post(
@@ -1057,15 +1392,15 @@ def imprimir_formulario_en_posicion(
 @app.post(
     "/print",
     tags=["Impresion"],
-    summary="Imprimir un gafete",
+    summary="Asignar e imprimir automaticamente un gafete",
     description=(
-        "Guarda el formulario, genera una pagina grafica de 109 x 100 mm con su QR "
-        "y la envia mediante el controlador grafico de Windows. El controlador debe "
-        "estar configurado con ese mismo papel en orientacion vertical. Una respuesta "
-        "exitosa confirma el envio a Windows, no necesariamente la impresion fisica."
+        "Guarda el formulario y reserva atomicamente la siguiente posicion de la tira. "
+        "Las solicitudes avanzan 1, 2, 3 y luego comienzan otra tira. Por defecto "
+        "simulate=true evita el acceso a la impresora; usa simulate=false para enviar "
+        "el trabajo al controlador de Windows."
     ),
-    response_description="Trabajo enviado a la impresora.",
-    response_model=ImpresionEnviada,
+    response_description="Posicion reservada y trabajo simulado o enviado.",
+    response_model=ImpresionAutomaticaEnviada,
     responses={
         422: RESPUESTA_VALIDACION,
         400: {
@@ -1079,23 +1414,64 @@ def imprimir_formulario_en_posicion(
     },
     operation_id="imprimir_gafete",
 )
-def imprimir(data: Formulario) -> dict[str, bool | str]:
+def imprimir(
+    data: Formulario,
+    simulate: Annotated[
+        bool,
+        Query(
+            description=(
+                "true registra y genera la simulacion sin usar Windows; false envia "
+                "la tira al controlador de la impresora."
+            ),
+            examples=[True],
+        ),
+    ] = True,
+) -> dict[str, bool | int | str | None]:
+    job_id: str | None = None
     try:
         form_id, _ = guardar_formulario(data)
-        imagen = generar_imagen_impresion(data, form_id)
-        impresora = imprimir_windows(imagen, data.printer_name)
+        job_id, strip_id, position, siguiente, completa = reservar_posicion(form_id)
+        configuracion = obtener_configuracion_tira()
+        imagen = generar_imagen_tira(
+            data,
+            form_id,
+            position,
+            configuracion,
+        )
+        impresora = None
+        if simulate:
+            actualizar_trabajo_impresion(job_id, "simulated")
+        else:
+            impresora = imprimir_windows(
+                imagen,
+                data.printer_name,
+                configuracion.paper_width_mm,
+                configuracion.paper_height_mm,
+            )
+            actualizar_trabajo_impresion(job_id, "sent")
         return {
             "ok": True,
-            "message": "Impresion enviada",
+            "message": (
+                f"Simulacion asignada a la posicion {position}"
+                if simulate
+                else f"Impresion enviada a la posicion {position}"
+            ),
+            "simulated": simulate,
             "printer": impresora,
             "id": form_id,
+            "strip_id": strip_id,
+            "position": position,
+            "next_position": siguiente,
+            "strip_completed": completa,
             "view_url": url_formulario(form_id),
-            "qr_url": f"{PUBLIC_BASE_URL}/api/forms/{form_id}/qr",
-            "print_preview_url": f"{PUBLIC_BASE_URL}/api/forms/{form_id}/print.png",
         }
     except ValueError as error:
+        if job_id:
+            actualizar_trabajo_impresion(job_id, "failed", str(error))
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
+        if job_id:
+            actualizar_trabajo_impresion(job_id, "failed", str(error))
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo imprimir: {error}",
