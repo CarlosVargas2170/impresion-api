@@ -289,7 +289,7 @@ class ConfiguracionTira(BaseModel):
                 "paper_height_mm": 279.4,
                 "badge_width_mm": 100,
                 "badge_height_mm": 85,
-                "form_padding_left_mm": 4,
+                "form_padding_left_mm": 6,
                 "global_offset_x_mm": 0,
                 "global_offset_y_mm": 0,
             }
@@ -301,7 +301,7 @@ class ConfiguracionTira(BaseModel):
     badge_width_mm: float = Field(default=100, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
     badge_height_mm: float = Field(default=85, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
     form_padding_left_mm: float = Field(
-        default=4,
+        default=6,
         ge=0,
         le=15,
         description="Margen interno que desplaza el contenido del gafete hacia la derecha.",
