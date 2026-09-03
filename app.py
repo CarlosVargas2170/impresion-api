@@ -333,7 +333,12 @@ class ImpresionPosicion(BaseModel):
         },
     )
 
-    position: Literal[2] = Field(default=2, description="La impresion solo admite la posicion 2.")
+    position: int = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="Posicion solicitada; se sobrescribe siempre con la posicion 2.",
+    )
     offset_x_mm: float = Field(default=0, ge=-20, le=20)
     offset_y_mm: float = Field(default=0, ge=-20, le=20)
     printer_name: str | None = Field(default=None, max_length=255)
@@ -401,7 +406,12 @@ class AjusteEstadoPosiciones(BaseModel):
         },
     )
 
-    next_position: Literal[2] = Field(default=2, description="La unica posicion habilitada es la 2.")
+    next_position: int = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="Valor solicitado; la API conserva siempre la posicion 2.",
+    )
     start_new_strip: bool = Field(default=False, description="Si es true, abandona la tira activa y crea otra.")
 
 
@@ -700,12 +710,12 @@ def ajustar_estado_posiciones(
                 tira = None
 
             if tira is None:
-                strip_id = _crear_tira(conexion, ajuste.next_position)
+                strip_id = _crear_tira(conexion, POSICION_IMPRESION)
             else:
                 strip_id = tira["id"]
                 conexion.execute(
                     "UPDATE print_strips SET next_position = ? WHERE id = ?",
-                    (ajuste.next_position, strip_id),
+                    (POSICION_IMPRESION, strip_id),
                 )
             estado = _estado_tira(conexion, strip_id)
             conexion.commit()
@@ -1563,7 +1573,7 @@ def imprimir_formulario_en_posicion(
         imagen = generar_imagen_tira(
             data,
             form_id,
-            ajuste.position,
+            POSICION_IMPRESION,
             configuracion,
             ajuste.offset_x_mm,
             ajuste.offset_y_mm,
@@ -1576,10 +1586,10 @@ def imprimir_formulario_en_posicion(
         )
         return {
             "ok": True,
-            "message": f"Impresion enviada a la posicion {ajuste.position}",
+            "message": f"Impresion enviada a la posicion {POSICION_IMPRESION}",
             "printer": impresora,
             "id": form_id,
-            "position": ajuste.position,
+            "position": POSICION_IMPRESION,
             "offset_x_mm": ajuste.offset_x_mm,
             "offset_y_mm": ajuste.offset_y_mm,
         }

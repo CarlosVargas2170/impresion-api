@@ -351,7 +351,7 @@ class ImpresionTiraTests(unittest.TestCase):
                 respuesta = api.imprimir_formulario_en_posicion(
                     form_id,
                     ImpresionPosicion(
-                        position=2,
+                        position=1,
                         offset_x_mm=1,
                         printer_name="EPSON L3310 Series",
                     ),
@@ -460,7 +460,7 @@ class ImpresionTiraTests(unittest.TestCase):
                 api.inicializar_db()
                 inicial = api.obtener_estado_posiciones()
                 corregido = api.configurar_estado_posiciones(
-                    api.AjusteEstadoPosiciones(next_position=2)
+                    api.AjusteEstadoPosiciones(next_position=3)
                 )
                 nueva = api.configurar_estado_posiciones(
                     api.AjusteEstadoPosiciones(
