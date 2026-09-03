@@ -851,7 +851,7 @@ def dibujar_campo(
     if not valor:
         return
     ancho_util = mm_a_px(STICKER_ANCHO_MM - 6)
-    fuente_etiqueta = cargar_fuente(False, 6)
+    fuente_etiqueta = cargar_fuente(False, 4.5)
     fuente_valor = fuente_ajustada(
         dibujo, valor, puntos, minimo, ancho_util, negrita
     )
@@ -893,18 +893,18 @@ def generar_imagen_impresion(
         if parte
     )
 
-    dibujar_campo(dibujo, "Nombre", data.first_name, 3, 6, 16, 11, True)
-    dibujar_campo(dibujo, "Apellidos", apellidos, 15, 18, 26, 16, True)
-    dibujar_campo(dibujo, "Empresa", data.company, 32, 35, 16, 10, True)
-    dibujar_campo(dibujo, "Cargo", data.job_title, 44, 47, 21, 12, True)
+    dibujar_campo(dibujo, "Nombre", data.first_name, 3, 6, 11, 7, True)
+    dibujar_campo(dibujo, "Apellidos", apellidos, 15, 18, 17, 9, True)
+    dibujar_campo(dibujo, "Empresa", data.company, 32, 35, 11, 7, True)
+    dibujar_campo(dibujo, "Cargo", data.job_title, 44, 47, 13, 8, True)
     dibujar_campo(
         dibujo,
         "Correo",
         str(data.email) if data.email else None,
         58,
         61,
-        16,
-        9,
+        8,
+        5,
         True,
     )
     if incluir_qr:
