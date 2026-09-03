@@ -226,6 +226,11 @@
     }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
 
+    /* Equivale a +4 mm para la posicion 1 y +2 mm para la posicion 2. */
+    .strip-slot[data-position="1"] { --position-offset-x: 3.7%; }
+    .strip-slot[data-position="2"] { --position-offset-x: 1.85%; }
+    .strip-slot[data-position="3"] { --position-offset-x: 0%; }
+
     .slot-number {
       position: absolute;
       top: 5px;
@@ -240,7 +245,7 @@
     .badge-preview {
       position: absolute;
       top: 50%;
-      left: 50%;
+      left: calc(50% + var(--position-offset-x, 0%));
       width: 72%;
       height: 112%;
       display: flex;
@@ -371,9 +376,9 @@
         <label>
           Siguiente posicion automatica
           <select id="targetPosition" disabled>
-            <option value="1">Posicion 1 · superior</option>
+            <option value="1">Posicion 1 · inferior</option>
             <option value="2">Posicion 2 · central</option>
-            <option value="3">Posicion 3 · inferior</option>
+            <option value="3">Posicion 3 · superior</option>
           </select>
         </label>
         <label class="mode-control">
@@ -393,16 +398,16 @@
       <div class="preview-label"><span>Tira vertical</span><span>107,95 × 279,4 mm</span></div>
       <div class="sheet-summary">3 cuadros · formulario girado en vertical</div>
       <div id="strip" class="strip" aria-label="Media hoja Carta con tres posiciones">
-        <button class="strip-slot active" type="button" data-position="1" aria-label="Seleccionar posicion 1">
-          <span class="slot-number">Posicion 1</span>
+        <button class="strip-slot" type="button" data-position="3" aria-label="Seleccionar posicion 3">
+          <span class="slot-number">Posicion 3</span>
           <span class="badge-preview"></span>
         </button>
         <button class="strip-slot" type="button" data-position="2" aria-label="Seleccionar posicion 2">
           <span class="slot-number">Posicion 2</span>
           <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
         </button>
-        <button class="strip-slot" type="button" data-position="3" aria-label="Seleccionar posicion 3">
-          <span class="slot-number">Posicion 3</span>
+        <button class="strip-slot active" type="button" data-position="1" aria-label="Seleccionar posicion 1">
+          <span class="slot-number">Posicion 1</span>
           <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
         </button>
       </div>

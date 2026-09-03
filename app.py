@@ -758,6 +758,7 @@ PAPEL_ANCHO_MM = 109
 PAPEL_ALTO_MM = 100
 STICKER_ANCHO_MM = 85
 DPI_RENDER = 300
+PADDING_ADICIONAL_POR_POSICION_MM = {1: 4, 2: 2, 3: 0}
 FUENTE_REGULAR = Path("C:/Windows/Fonts/arial.ttf")
 FUENTE_NEGRITA = Path("C:/Windows/Fonts/arialbd.ttf")
 
@@ -785,6 +786,12 @@ def generar_formulario(data: Formulario) -> str:
 
 def mm_a_px(milimetros: float) -> int:
     return round(milimetros * DPI_RENDER / 25.4)
+
+
+def padding_formulario_mm(position: int, padding_base_mm: float) -> float:
+    """Aumenta gradualmente el margen izquierdo desde la posicion 3 a la 1."""
+
+    return padding_base_mm + PADDING_ADICIONAL_POR_POSICION_MM[position]
 
 
 def puntos_a_px(puntos: float) -> int:
@@ -914,7 +921,9 @@ def generar_imagen_tira(
         ),
         Image.Resampling.LANCZOS,
     )
-    padding_izquierdo = mm_a_px(configuracion.form_padding_left_mm)
+    padding_izquierdo = mm_a_px(
+        padding_formulario_mm(position, configuracion.form_padding_left_mm)
+    )
     if padding_izquierdo:
         contenido_desplazado = Image.new("RGB", gafete.size, "white")
         contenido_desplazado.paste(gafete, (padding_izquierdo, 0))

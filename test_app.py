@@ -247,6 +247,35 @@ class ImpresionTiraTests(unittest.TestCase):
         caja_con_padding = self.contenido_impreso(con_padding)
         self.assertGreater(caja_con_padding[0], caja_sin_padding[0])
 
+    def test_padding_disminuye_gradualmente_de_posicion_1_a_3(self):
+        configuracion = ConfiguracionTira()
+        cajas = {
+            posicion: self.contenido_impreso(
+                generar_imagen_tira(
+                    self.formulario(),
+                    "formulario-de-prueba",
+                    posicion,
+                    configuracion,
+                )
+            )
+            for posicion in (1, 2, 3)
+        }
+
+        self.assertGreater(cajas[1][0], cajas[2][0])
+        self.assertGreater(cajas[2][0], cajas[3][0])
+        self.assertEqual(
+            api.padding_formulario_mm(1, configuracion.form_padding_left_mm),
+            10,
+        )
+        self.assertEqual(
+            api.padding_formulario_mm(2, configuracion.form_padding_left_mm),
+            8,
+        )
+        self.assertEqual(
+            api.padding_formulario_mm(3, configuracion.form_padding_left_mm),
+            6,
+        )
+
     @patch("app.imprimir_windows", return_value="EPSON L3310 Series")
     def test_endpoint_imprime_formulario_guardado_en_posicion(self, imprimir):
         with tempfile.TemporaryDirectory() as temporal:
