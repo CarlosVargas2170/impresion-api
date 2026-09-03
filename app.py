@@ -291,7 +291,7 @@ class ConfiguracionTira(BaseModel):
                 "badge_height_mm": 80,
                 "form_padding_left_mm": 6,
                 "global_offset_x_mm": 0,
-                "global_offset_y_mm": 5,
+                "global_offset_y_mm": -1,
             }
         },
     )
@@ -307,7 +307,7 @@ class ConfiguracionTira(BaseModel):
         description="Margen interno que desplaza el contenido del gafete hacia la derecha.",
     )
     global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
-    global_offset_y_mm: float = Field(default=5, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
+    global_offset_y_mm: float = Field(default=-1, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
     @model_validator(mode="after")
     def validar_distribucion(self) -> "ConfiguracionTira":
@@ -851,7 +851,7 @@ def dibujar_campo(
     if not valor:
         return
     ancho_util = mm_a_px(STICKER_ANCHO_MM - 6)
-    fuente_etiqueta = cargar_fuente(False, 7)
+    fuente_etiqueta = cargar_fuente(False, 6)
     fuente_valor = fuente_ajustada(
         dibujo, valor, puntos, minimo, ancho_util, negrita
     )
@@ -893,18 +893,18 @@ def generar_imagen_impresion(
         if parte
     )
 
-    dibujar_campo(dibujo, "Nombre", data.first_name, 3, 6, 18, 12, True)
-    dibujar_campo(dibujo, "Apellidos", apellidos, 15, 18, 30, 18, True)
-    dibujar_campo(dibujo, "Empresa", data.company, 32, 35, 18, 11, True)
-    dibujar_campo(dibujo, "Cargo", data.job_title, 44, 47, 24, 14, True)
+    dibujar_campo(dibujo, "Nombre", data.first_name, 3, 6, 16, 11, True)
+    dibujar_campo(dibujo, "Apellidos", apellidos, 15, 18, 26, 16, True)
+    dibujar_campo(dibujo, "Empresa", data.company, 32, 35, 16, 10, True)
+    dibujar_campo(dibujo, "Cargo", data.job_title, 44, 47, 21, 12, True)
     dibujar_campo(
         dibujo,
         "Correo",
         str(data.email) if data.email else None,
         58,
         61,
-        18,
-        10,
+        16,
+        9,
         True,
     )
     if incluir_qr:
