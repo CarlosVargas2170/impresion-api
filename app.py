@@ -291,7 +291,7 @@ class ConfiguracionTira(BaseModel):
                 "badge_height_mm": 80,
                 "form_padding_left_mm": 6,
                 "global_offset_x_mm": 0,
-                "global_offset_y_mm": 3,
+                "global_offset_y_mm": 5,
             }
         },
     )
@@ -307,7 +307,7 @@ class ConfiguracionTira(BaseModel):
         description="Margen interno que desplaza el contenido del gafete hacia la derecha.",
     )
     global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
-    global_offset_y_mm: float = Field(default=3, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
+    global_offset_y_mm: float = Field(default=5, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
     @model_validator(mode="after")
     def validar_distribucion(self) -> "ConfiguracionTira":

@@ -226,7 +226,7 @@ class ImpresionTiraTests(unittest.TestCase):
             / 4,
             9.85,
         )
-        self.assertEqual(configuracion.global_offset_y_mm, 3)
+        self.assertEqual(configuracion.global_offset_y_mm, 5)
 
         cajas = [self.contenido_impreso(imagen) for imagen in imagenes]
         self.assertTrue(all(caja is not None for caja in cajas))

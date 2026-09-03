@@ -13,8 +13,8 @@ sin desplazar la hoja completa.
 
 Cada posición ocupa `80 mm` de alto. En la tira de `279,4 mm`, esto deja una
 separación uniforme de `9,85 mm` antes, entre y después de los tres formularios.
-Los tres formularios reciben además un desplazamiento vertical global de `3 mm`
-hacia abajo; por eso quedan `12,85 mm` arriba y `6,85 mm` abajo.
+Los tres formularios reciben además un desplazamiento vertical global de `5 mm`
+hacia abajo; por eso quedan `14,85 mm` arriba y `4,85 mm` abajo.
 
 ## Dominio usado por los códigos QR
 
