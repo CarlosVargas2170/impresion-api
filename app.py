@@ -758,6 +758,8 @@ PAPEL_ANCHO_MM = 109
 PAPEL_ALTO_MM = 100
 STICKER_ANCHO_MM = 85
 DPI_RENDER = 300
+QR_TAMANO_MM = 17
+QR_MARGEN_BORDE_MM = 2
 PADDING_ADICIONAL_POR_POSICION_MM = {1: 4, 2: 2, 3: 0}
 FUENTE_REGULAR = Path("C:/Windows/Fonts/arial.ttf")
 FUENTE_NEGRITA = Path("C:/Windows/Fonts/arialbd.ttf")
@@ -857,7 +859,26 @@ def dibujar_campo(
     dibujar_centrado(dibujo, valor, y_valor_mm, fuente_valor, "#17201f")
 
 
-def generar_imagen_impresion(data: Formulario, form_id: str) -> Image.Image:
+def generar_codigo_qr(url: str, tamano_mm: float = QR_TAMANO_MM) -> Image.Image:
+    """Genera un QR compacto y de alto contraste apto para impresion."""
+
+    codigo = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    codigo.add_data(url)
+    codigo.make(fit=True)
+    imagen = codigo.make_image(fill_color="black", back_color="white").convert("RGB")
+    tamano_px = mm_a_px(tamano_mm)
+    return imagen.resize((tamano_px, tamano_px), Image.Resampling.NEAREST)
+
+
+def generar_imagen_impresion(
+    data: Formulario,
+    form_id: str,
+    incluir_qr: bool = True,
+) -> Image.Image:
     imagen = Image.new(
         "RGB",
         (mm_a_px(PAPEL_ANCHO_MM), mm_a_px(PAPEL_ALTO_MM)),
@@ -871,19 +892,24 @@ def generar_imagen_impresion(data: Formulario, form_id: str) -> Image.Image:
     )
 
     dibujar_campo(dibujo, "Nombre", data.first_name, 4.5, 7.5, 30, 18, True)
-    dibujar_campo(dibujo, "Apellidos", apellidos, 22, 25, 22, 14, True)
-    dibujar_campo(dibujo, "Empresa", data.company, 39, 42, 18, 11, True)
-    dibujar_campo(dibujo, "Cargo", data.job_title, 54, 57, 16, 10, True)
+    dibujar_campo(dibujo, "Apellidos", apellidos, 20.5, 23.5, 22, 14, True)
+    dibujar_campo(dibujo, "Empresa", data.company, 34, 37, 18, 11, True)
+    dibujar_campo(dibujo, "Cargo", data.job_title, 46, 49, 16, 10, True)
     dibujar_campo(
         dibujo,
         "Correo",
         str(data.email) if data.email else None,
-        69,
-        72,
+        58,
+        61,
         13,
         8,
         True,
     )
+    if incluir_qr:
+        codigo_qr = generar_codigo_qr(url_formulario(form_id))
+        qr_x = (imagen.width - codigo_qr.width) // 2
+        qr_y = imagen.height - codigo_qr.height - mm_a_px(QR_MARGEN_BORDE_MM)
+        imagen.paste(codigo_qr, (qr_x, qr_y))
     return imagen
 
 
@@ -909,7 +935,7 @@ def generar_imagen_tira(
         "white",
     )
 
-    pagina = generar_imagen_impresion(data, form_id)
+    pagina = generar_imagen_impresion(data, form_id, incluir_qr=False)
     ancho_sticker = mm_a_px(STICKER_ANCHO_MM)
     izquierda = (pagina.width - ancho_sticker) // 2
     gafete = pagina.crop((izquierda, 0, izquierda + ancho_sticker, pagina.height))
@@ -928,6 +954,12 @@ def generar_imagen_tira(
         contenido_desplazado = Image.new("RGB", gafete.size, "white")
         contenido_desplazado.paste(gafete, (padding_izquierdo, 0))
         gafete = contenido_desplazado
+
+    # El QR se agrega despues del padding para que nunca se recorte en la posicion 1.
+    codigo_qr = generar_codigo_qr(url_formulario(form_id))
+    qr_x = gafete.width - codigo_qr.width - mm_a_px(QR_MARGEN_BORDE_MM)
+    qr_y = (gafete.height - codigo_qr.height) // 2
+    gafete.paste(codigo_qr, (qr_x, qr_y))
 
     separacion = (
         configuracion.paper_height_mm - configuracion.badge_height_mm * 3

@@ -282,7 +282,13 @@
     .badge-surnames { display: block; margin-top: 5px; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
     .badge-company { display: block; margin-top: 10px; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
     .badge-job { display: block; margin-top: 4px; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
-    .badge-email { display: block; margin-top: 9px; color: #53615e; font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-email { display: block; margin-top: 7px; color: #53615e; font-size: 9px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-qr {
+      width: 28px;
+      height: 28px;
+      margin: 5px auto 0;
+      image-rendering: pixelated;
+    }
 
     .simulation-note {
       width: min(100%, 270px);
@@ -459,6 +465,7 @@
           ${data.company ? `<span class="badge-company">${escapeHtml(data.company)}</span>` : ""}
           ${data.job_title ? `<span class="badge-job">${escapeHtml(data.job_title)}</span>` : ""}
           ${data.email ? `<span class="badge-email">${escapeHtml(data.email)}</span>` : ""}
+          ${data.id ? `<img class="badge-qr" src="/api/forms/${encodeURIComponent(data.id)}/qr" alt="QR del formulario">` : ""}
         </span>`;
     }
 
@@ -502,7 +509,7 @@
         currentStripId = state.strip_id;
         printedSlots.fill(null);
         for (const item of state.positions) {
-          printedSlots[item.position - 1] = item.data;
+          printedSlots[item.position - 1] = { ...item.data, id: item.form_id };
         }
         targetPosition.value = String(state.next_position);
         renderStrip();
@@ -550,7 +557,7 @@
       status.textContent = "Guardando...";
       try {
         const data = await saveForm();
-        savedPreview = { saved: true };
+        savedPreview = { saved: true, id: data.id };
         renderStrip();
         status.className = "success";
         status.textContent = "Formulario guardado correctamente";
@@ -578,7 +585,7 @@
         const result = await response.json();
         if (!response.ok) throw new Error(errorMessage(result, "No se pudo procesar"));
 
-        const previewData = { ...payload() };
+        const previewData = { ...payload(), id: result.id };
         if (currentStripId !== result.strip_id) {
           printedSlots.fill(null);
           currentStripId = result.strip_id;

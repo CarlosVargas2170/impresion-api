@@ -7,9 +7,8 @@
   <style>
     :root {
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #17201f;
-      background: #eef1ef;
-      letter-spacing: 0;
+      color: #18302c;
+      background: #eaf1ee;
     }
 
     * { box-sizing: border-box; }
@@ -20,110 +19,186 @@
       margin: 0;
       display: grid;
       place-items: center;
-      padding: 28px 16px;
+      padding: 32px 16px;
+      background:
+        radial-gradient(circle at 12% 10%, rgb(232 191 69 / 24%), transparent 30rem),
+        radial-gradient(circle at 90% 90%, rgb(8 125 107 / 18%), transparent 32rem),
+        #eaf1ee;
     }
 
     main {
-      width: min(100%, 430px);
-      display: grid;
-      justify-items: center;
-      gap: 12px;
+      width: min(100%, 720px);
     }
 
     .form-sheet {
-      width: min(100%, 390px);
-      aspect-ratio: 85 / 100;
-      padding: 30px 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
+      position: relative;
       overflow: hidden;
-      color: #111;
       background: #fff;
-      border: 1px solid #d7ddda;
-      box-shadow: 0 16px 42px rgb(23 32 31 / 14%);
-      text-align: center;
+      border: 1px solid rgb(23 65 58 / 12%);
+      border-radius: 24px;
+      box-shadow: 0 26px 70px rgb(23 48 44 / 18%);
     }
 
-    .name {
-      font-size: 42px;
-      line-height: 1.04;
-      font-weight: 700;
-      overflow-wrap: anywhere;
+    .accent { height: 8px; background: linear-gradient(90deg, #e8bf45, #087d6b); }
+
+    .sheet-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 24px 28px 20px;
+      border-bottom: 1px solid #e4ebe8;
     }
 
-    .field::before {
-      content: attr(data-label);
-      display: block;
-      margin-bottom: 5px;
-      color: #6b7774;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 10px;
-      font-weight: 600;
-      line-height: 1;
+    .logo {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #fff;
+      background: #087d6b;
+      border-radius: 14px;
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .eyebrow {
+      margin: 0 0 3px;
+      color: #087d6b;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .13em;
       text-transform: uppercase;
     }
 
-    .surnames {
-      margin-top: 8px;
+    h1 { margin: 0; font-size: 19px; line-height: 1.2; }
+
+    .sheet-body { padding: 30px 28px 28px; }
+
+    .identity {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      align-items: center;
+      gap: 20px;
+    }
+
+    .initials {
+      width: 76px;
+      height: 76px;
+      display: grid;
+      place-items: center;
+      color: #075f52;
+      background: #dff1eb;
+      border: 1px solid #b9ddd3;
+      border-radius: 22px;
       font-size: 26px;
-      line-height: 1.1;
-      font-weight: 650;
-      overflow-wrap: anywhere;
+      font-weight: 900;
     }
 
-    .company {
-      margin-top: 14px;
-      font-size: 21px;
-      font-weight: 600;
-      overflow-wrap: anywhere;
+    .name { margin: 0; font-size: clamp(30px, 7vw, 46px); line-height: .98; overflow-wrap: anywhere; }
+    .surnames { margin-top: 7px; color: #51615e; font-size: clamp(19px, 4vw, 25px); font-weight: 650; overflow-wrap: anywhere; }
+
+    .description {
+      width: fit-content;
+      margin: 22px 0 0;
+      padding: 7px 11px;
+      color: #6a5210;
+      background: #fff4cf;
+      border: 1px solid #f0d67d;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 750;
     }
 
-    .job-title {
-      margin-top: 7px;
-      font-size: 18px;
-      line-height: 1.15;
-      font-weight: 650;
-      overflow-wrap: anywhere;
-    }
-
-    .email {
+    .details {
       margin-top: 26px;
-      color: #53615e;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 16px;
-      font-weight: 700;
-      overflow-wrap: anywhere;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
     }
+
+    .detail {
+      min-width: 0;
+      padding: 15px 16px;
+      background: #f5f8f7;
+      border: 1px solid #e1e8e5;
+      border-radius: 14px;
+    }
+
+    .detail-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #71807c;
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .detail-value { font-size: 15px; font-weight: 720; overflow-wrap: anywhere; }
+    .detail a { color: #087d6b; text-decoration: none; }
+
+    .sheet-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 24px;
+      padding-top: 18px;
+      color: #71807c;
+      border-top: 1px solid #e4ebe8;
+      font-size: 11px;
+    }
+
+    .record-id { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .status {
-      min-height: 20px;
+      min-height: 22px;
+      margin-top: 14px;
       color: #596663;
       font-size: 13px;
       text-align: center;
     }
-
     .status.error { color: #b42318; }
 
-    @media (max-width: 430px) {
-      .form-sheet { padding: 24px 18px; }
-      .name { font-size: 34px; }
-      .surnames { font-size: 22px; }
-      .company { font-size: 18px; }
-      .job-title { font-size: 16px; }
-      .email { font-size: 14px; }
+    @media (max-width: 560px) {
+      body { padding: 14px; }
+      .sheet-header, .sheet-body { padding-left: 20px; padding-right: 20px; }
+      .identity { grid-template-columns: 58px minmax(0, 1fr); gap: 14px; }
+      .initials { width: 58px; height: 58px; border-radius: 17px; font-size: 21px; }
+      .details { grid-template-columns: 1fr; }
+      .sheet-footer { display: grid; gap: 6px; }
+      .record-id { max-width: 100%; }
     }
   </style>
 </head>
 <body>
   <main>
     <section id="formSheet" class="form-sheet" aria-label="Formulario recibido" hidden>
-      <div id="name" class="name field" data-label="Nombre"></div>
-      <div id="surnames" class="surnames field" data-label="Apellidos"></div>
-      <div id="company" class="company field" data-label="Empresa"></div>
-      <div id="jobTitle" class="job-title field" data-label="Cargo"></div>
-      <div id="email" class="email field" data-label="Correo"></div>
+      <div class="accent"></div>
+      <header class="sheet-header">
+        <div class="logo" aria-hidden="true">N</div>
+        <div><p class="eyebrow">Nexus Patio Tech</p><h1>Información del registro</h1></div>
+      </header>
+      <div class="sheet-body">
+        <div class="identity">
+          <div id="initials" class="initials" aria-hidden="true"></div>
+          <div>
+            <div id="name" class="name"></div>
+            <div id="surnames" class="surnames"></div>
+          </div>
+        </div>
+        <div id="description" class="description"></div>
+        <div class="details">
+          <div id="companyCard" class="detail"><span class="detail-label">Empresa</span><div id="company" class="detail-value"></div></div>
+          <div id="jobCard" class="detail"><span class="detail-label">Cargo</span><div id="jobTitle" class="detail-value"></div></div>
+          <div id="emailCard" class="detail"><span class="detail-label">Correo</span><div id="email" class="detail-value"></div></div>
+          <div id="phoneCard" class="detail"><span class="detail-label">Teléfono</span><div id="phone" class="detail-value"></div></div>
+        </div>
+        <footer class="sheet-footer">
+          <span id="createdAt"></span>
+          <span id="recordId" class="record-id"></span>
+        </footer>
+      </div>
     </section>
     <div id="status" class="status" role="status">Cargando formulario...</div>
   </main>
@@ -132,11 +207,21 @@
     const formId = decodeURIComponent(location.pathname.split("/").filter(Boolean).at(-1));
     const formSheet = document.querySelector("#formSheet");
     const status = document.querySelector("#status");
+    const initials = document.querySelector("#initials");
     const name = document.querySelector("#name");
     const surnames = document.querySelector("#surnames");
+    const description = document.querySelector("#description");
     const company = document.querySelector("#company");
     const jobTitle = document.querySelector("#jobTitle");
     const email = document.querySelector("#email");
+    const phone = document.querySelector("#phone");
+    const createdAt = document.querySelector("#createdAt");
+    const recordId = document.querySelector("#recordId");
+
+    function setOptional(cardId, element, value) {
+      element.textContent = value || "";
+      document.querySelector(cardId).hidden = !value;
+    }
 
     async function loadForm() {
       try {
@@ -145,17 +230,20 @@
         if (!response.ok) throw new Error(data.detail || "Formulario no encontrado");
 
         name.textContent = data.first_name;
-        name.style.fontSize = data.first_name.length > 20
-          ? "28px"
-          : data.first_name.length > 14 ? "35px" : "42px";
-        surnames.textContent = [data.paternal_surname, data.maternal_surname]
-          .filter(Boolean).join(" ");
-        company.textContent = data.company || "";
-        company.hidden = !data.company;
-        jobTitle.textContent = data.job_title || "";
-        jobTitle.hidden = !data.job_title;
-        email.textContent = data.email || "";
-        email.hidden = !data.email;
+        const fullSurnames = [data.paternal_surname, data.maternal_surname].filter(Boolean).join(" ");
+        surnames.textContent = fullSurnames;
+        initials.textContent = `${data.first_name?.[0] || ""}${data.paternal_surname?.[0] || ""}`.toUpperCase();
+        description.textContent = data.description || "";
+        description.hidden = !data.description;
+        setOptional("#companyCard", company, data.company);
+        setOptional("#jobCard", jobTitle, data.job_title);
+        setOptional("#emailCard", email, data.email);
+        setOptional("#phoneCard", phone, [data.phone_prefix, data.phone_number].filter(Boolean).join(" "));
+        createdAt.textContent = data.created_at
+          ? `Registrado: ${new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.created_at))}`
+          : "";
+        recordId.textContent = `ID: ${data.id}`;
+        recordId.title = data.id;
         formSheet.hidden = false;
         status.textContent = "";
       } catch (error) {

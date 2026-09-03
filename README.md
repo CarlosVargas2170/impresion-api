@@ -14,6 +14,19 @@ sin desplazar la hoja completa.
 Cada posición ocupa `80 mm` de alto. En la tira de `279,4 mm`, esto deja una
 separación uniforme de `9,85 mm` antes, entre y después de los tres formularios.
 
+## Dominio usado por los códigos QR
+
+Cada gafete incluye un QR que abre `PUBLIC_BASE_URL/forms/{id}`. El dominio puede
+cambiarse con la variable de entorno `PUBLIC_BASE_URL`:
+
+```powershell
+$env:PUBLIC_BASE_URL = "https://registro.example.com"
+```
+
+También puede editarse `public_base_url` en `config.json`. Reinicia la API y el
+worker después de cambiarlo. La URL debe ser accesible desde el teléfono que escanea
+el QR; `127.0.0.1` solamente funciona en la misma computadora.
+
 ## Preparación
 
 Instala las dependencias:

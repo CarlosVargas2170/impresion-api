@@ -100,14 +100,24 @@ class FormularioTests(unittest.TestCase):
         self.assertTrue(imagen.getbbox())
         self.assertTrue(imagen_a_png(imagen).startswith(b"\x89PNG"))
 
-    @patch("app.qrcode.QRCode")
-    def test_imagen_de_impresion_no_incluye_qr(self, crear_qr):
+    @patch("app.generar_codigo_qr", return_value=Image.new("RGB", (20, 20), "black"))
+    def test_imagen_de_impresion_incluye_qr(self, generar_qr):
         generar_imagen_impresion(
             Formulario(**self.datos_validos()),
             "formulario-de-prueba",
         )
 
-        crear_qr.assert_not_called()
+        generar_qr.assert_called_once_with(
+            f"{api.PUBLIC_BASE_URL}/forms/formulario-de-prueba"
+        )
+
+    def test_codigo_qr_tiene_el_tamano_configurado(self):
+        imagen = api.generar_codigo_qr("https://example.com/forms/123")
+
+        self.assertEqual(
+            imagen.size,
+            (api.mm_a_px(api.QR_TAMANO_MM), api.mm_a_px(api.QR_TAMANO_MM)),
+        )
 
 
 class ImpresionTests(unittest.TestCase):
