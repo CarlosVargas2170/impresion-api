@@ -11,6 +11,9 @@ La configuración de la tira incluye `form_padding_left_mm`, con `6 mm` por defe
 para separar el contenido del borde izquierdo. Puede ajustarse mediante `PUT /print-layout`
 sin desplazar la hoja completa.
 
+Cada posición ocupa `80 mm` de alto. En la tira de `279,4 mm`, esto deja una
+separación uniforme de `9,85 mm` antes, entre y después de los tres formularios.
+
 ## Preparación
 
 Instala las dependencias:

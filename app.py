@@ -288,7 +288,7 @@ class ConfiguracionTira(BaseModel):
                 "paper_width_mm": 107.95,
                 "paper_height_mm": 279.4,
                 "badge_width_mm": 100,
-                "badge_height_mm": 85,
+                "badge_height_mm": 80,
                 "form_padding_left_mm": 6,
                 "global_offset_x_mm": 0,
                 "global_offset_y_mm": 0,
@@ -299,7 +299,7 @@ class ConfiguracionTira(BaseModel):
     paper_width_mm: float = Field(default=107.95, gt=50, le=220, description="Ancho fisico de la tira en milimetros.")
     paper_height_mm: float = Field(default=279.4, gt=100, le=500, description="Alto fisico de la tira en milimetros.")
     badge_width_mm: float = Field(default=100, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
-    badge_height_mm: float = Field(default=85, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
+    badge_height_mm: float = Field(default=80, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
     form_padding_left_mm: float = Field(
         default=6,
         ge=0,

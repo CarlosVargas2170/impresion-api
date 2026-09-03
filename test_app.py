@@ -207,6 +207,15 @@ class ImpresionTiraTests(unittest.TestCase):
             api.mm_a_px(configuracion.paper_height_mm),
         )
         self.assertTrue(all(imagen.size == tamano_esperado for imagen in imagenes))
+        self.assertEqual(configuracion.badge_height_mm, 80)
+        self.assertAlmostEqual(
+            (
+                configuracion.paper_height_mm
+                - configuracion.badge_height_mm * 3
+            )
+            / 4,
+            9.85,
+        )
 
         cajas = [self.contenido_impreso(imagen) for imagen in imagenes]
         self.assertTrue(all(caja is not None for caja in cajas))
