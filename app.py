@@ -92,7 +92,7 @@ def cargar_url_publica() -> str:
             configuracion = json.load(archivo)
     url = os.getenv(
         "PUBLIC_BASE_URL",
-        configuracion.get("public_base_url", "http://127.0.0.1:9102"),
+        configuracion.get("public_base", "http://127.0.0.1:9102"),
     )
     return url.rstrip("/")
 
