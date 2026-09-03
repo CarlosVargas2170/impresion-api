@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from PIL import Image, ImageChops
 
@@ -18,6 +19,7 @@ from app import (
     imagen_a_png,
     imprimir_windows,
     previsualizar,
+    url_networking,
 )
 
 
@@ -108,7 +110,46 @@ class FormularioTests(unittest.TestCase):
         )
 
         generar_qr.assert_called_once_with(
-            f"{api.PUBLIC_BASE_URL}/forms/formulario-de-prueba"
+            "https://www.expoteleinfo.com/networking?"
+            "nombre=Ana&apellido=Perez+Lopez&telefono=%2B59171234567&"
+            "email=ana.perez%40ejemplo.com&cargo=Gerente+comercial&empresa=Nexus"
+        )
+
+    def test_url_networking_usa_y_codifica_los_valores_del_formulario(self):
+        formulario = Formulario(
+            **self.datos_validos(
+                first_name="María José",
+                paternal_surname="Núñez",
+                maternal_surname="D'Angelo",
+                company="Nexus & Asociados",
+                job_title="I+D",
+            )
+        )
+
+        self.assertEqual(
+            url_networking(formulario),
+            "https://www.expoteleinfo.com/networking?"
+            "nombre=Mar%C3%ADa+Jos%C3%A9&apellido=N%C3%BA%C3%B1ez+D%27Angelo&"
+            "telefono=%2B59171234567&email=ana.perez%40ejemplo.com&"
+            "cargo=I%2BD&empresa=Nexus+%26+Asociados",
+        )
+
+    def test_url_networking_incluye_campos_opcionales_vacios(self):
+        formulario = Formulario(
+            **self.datos_validos(
+                maternal_surname=None,
+                company=None,
+                job_title=None,
+                phone_prefix=None,
+                phone_number=None,
+                email=None,
+            )
+        )
+
+        self.assertEqual(
+            url_networking(formulario),
+            "https://www.expoteleinfo.com/networking?"
+            "nombre=Ana&apellido=Perez&telefono=&email=&cargo=&empresa=",
         )
 
     def test_codigo_qr_tiene_el_tamano_configurado(self):
@@ -342,6 +383,44 @@ class ImpresionTiraTests(unittest.TestCase):
         self.assertTrue(respuestas[2]["strip_completed"])
         self.assertTrue(all(item["simulated"] for item in respuestas))
         imprimir.assert_not_called()
+
+    @patch("app.imprimir_windows", side_effect=RuntimeError("sin papel"))
+    def test_fallo_de_impresion_devuelve_la_posicion_reservada(self, imprimir):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                with self.assertRaises(HTTPException):
+                    api.procesar_impresion(self.formulario(), simulate=False)
+
+                estado_fallido = api.obtener_estado_posiciones()
+                reintento = api.procesar_impresion(self.formulario(), simulate=True)
+
+        self.assertEqual(estado_fallido["next_position"], 1)
+        self.assertEqual(estado_fallido["positions"][0]["status"], "failed")
+        self.assertEqual(reintento["position"], 1)
+
+    def test_fallo_en_posicion_3_reabre_la_misma_tira(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                primera = api.procesar_impresion(self.formulario(), simulate=True)
+                api.procesar_impresion(self.formulario(), simulate=True)
+                with patch("app.imprimir_windows", side_effect=RuntimeError("sin papel")):
+                    with self.assertRaises(HTTPException):
+                        api.procesar_impresion(self.formulario(), simulate=False)
+
+                estado = api.obtener_estado_posiciones()
+
+        self.assertEqual(estado["strip_id"], primera["strip_id"])
+        self.assertEqual(estado["next_position"], 3)
 
     def test_solicitudes_simultaneas_no_repiten_posicion_en_una_tira(self):
         with tempfile.TemporaryDirectory() as temporal:

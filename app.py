@@ -6,6 +6,7 @@ from io import BytesIO
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import qrcode
@@ -98,6 +99,7 @@ def cargar_url_publica() -> str:
 
 
 PUBLIC_BASE_URL = cargar_url_publica()
+NETWORKING_URL = "https://www.expoteleinfo.com/networking"
 
 TextoRequerido = Annotated[str, Field(min_length=1, max_length=100)]
 
@@ -562,6 +564,28 @@ def url_formulario(form_id: str) -> str:
     return f"{PUBLIC_BASE_URL}/forms/{form_id}"
 
 
+def url_networking(data: Formulario) -> str:
+    """Construye el destino del QR con los datos capturados del asistente."""
+
+    apellido = " ".join(
+        parte
+        for parte in (data.paternal_surname, data.maternal_surname)
+        if parte
+    )
+    telefono = "".join(
+        parte for parte in (data.phone_prefix, data.phone_number) if parte
+    )
+    parametros = {
+        "nombre": data.first_name,
+        "apellido": apellido,
+        "telefono": telefono,
+        "email": str(data.email) if data.email else "",
+        "cargo": data.job_title or "",
+        "empresa": data.company or "",
+    }
+    return f"{NETWORKING_URL}?{urlencode(parametros)}"
+
+
 def formulario_desde_registro(registro: dict[str, object]) -> Formulario:
     datos = {
         campo: registro.get(campo)
@@ -749,6 +773,80 @@ def actualizar_trabajo_impresion(
             )
 
 
+def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
+    """Marca el trabajo fallido y recupera su posicion cuando sigue siendo la ultima."""
+
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            trabajo = conexion.execute(
+                """
+                SELECT rowid, strip_id, position
+                FROM print_jobs
+                WHERE id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+            if trabajo is None:
+                conexion.commit()
+                return False
+
+            conexion.execute(
+                "UPDATE print_jobs SET status = 'failed', error = ? WHERE id = ?",
+                (error, job_id),
+            )
+
+            trabajo_posterior = conexion.execute(
+                """
+                SELECT 1 FROM print_jobs
+                WHERE strip_id = ? AND rowid > ?
+                LIMIT 1
+                """,
+                (trabajo["strip_id"], trabajo["rowid"]),
+            ).fetchone()
+            if trabajo_posterior:
+                conexion.commit()
+                return False
+
+            posicion = int(trabajo["position"])
+            if posicion == 3:
+                otra_tira_activa = conexion.execute(
+                    """
+                    SELECT 1 FROM print_strips
+                    WHERE status = 'active' AND id <> ?
+                    LIMIT 1
+                    """,
+                    (trabajo["strip_id"],),
+                ).fetchone()
+                if otra_tira_activa:
+                    conexion.commit()
+                    return False
+                cursor = conexion.execute(
+                    """
+                    UPDATE print_strips
+                    SET next_position = 3, status = 'active', completed_at = NULL
+                    WHERE id = ? AND status = 'completed' AND next_position = 1
+                    """,
+                    (trabajo["strip_id"],),
+                )
+            else:
+                cursor = conexion.execute(
+                    """
+                    UPDATE print_strips
+                    SET next_position = ?
+                    WHERE id = ? AND status = 'active' AND next_position = ?
+                    """,
+                    (posicion, trabajo["strip_id"], posicion + 1),
+                )
+
+            recuperada = cursor.rowcount == 1
+            conexion.commit()
+            return recuperada
+        except Exception:
+            conexion.rollback()
+            raise
+
+
 inicializar_db()
 
 
@@ -908,7 +1006,7 @@ def generar_imagen_impresion(
         True,
     )
     if incluir_qr:
-        codigo_qr = generar_codigo_qr(url_formulario(form_id))
+        codigo_qr = generar_codigo_qr(url_networking(data))
         qr_x = (imagen.width - codigo_qr.width) // 2
         qr_y = imagen.height - codigo_qr.height - mm_a_px(QR_MARGEN_INFERIOR_MM)
         imagen.paste(codigo_qr, (qr_x, qr_y))
@@ -958,7 +1056,7 @@ def generar_imagen_tira(
         gafete = contenido_desplazado
 
     # El QR se agrega despues del padding para que nunca se recorte en la posicion 1.
-    codigo_qr = generar_codigo_qr(url_formulario(form_id))
+    codigo_qr = generar_codigo_qr(url_networking(data))
     qr_x = gafete.width - codigo_qr.width - mm_a_px(QR_MARGEN_DERECHO_MM)
     qr_y = (
         (gafete.height - codigo_qr.height) // 2
@@ -1182,8 +1280,8 @@ def consultar_formulario(
     tags=["Formularios"],
     summary="Descargar el codigo QR de un formulario",
     description=(
-        "Genera una imagen PNG cuyo codigo QR dirige a la vista publica del formulario. "
-        "El formulario debe existir previamente."
+        "Genera una imagen PNG cuyo codigo QR dirige a la pagina de networking de "
+        "Expo Teleinfo con los datos del formulario. El formulario debe existir previamente."
     ),
     responses={
         200: {
@@ -1211,9 +1309,11 @@ def qr_formulario(
         ),
     ],
 ) -> Response:
-    if obtener_formulario(form_id) is None:
+    registro = obtener_formulario(form_id)
+    if registro is None:
         raise HTTPException(status_code=404, detail="Formulario no encontrado")
-    imagen = qrcode.make(url_formulario(form_id))
+    data = formulario_desde_registro(registro)
+    imagen = qrcode.make(url_networking(data))
     contenido = BytesIO()
     imagen.save(contenido, format="PNG")
     return Response(content=contenido.getvalue(), media_type="image/png")
@@ -1605,11 +1705,11 @@ def procesar_impresion(
         }
     except ValueError as error:
         if job_id:
-            actualizar_trabajo_impresion(job_id, "failed", str(error))
+            fallar_trabajo_y_devolver_posicion(job_id, str(error))
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         if job_id:
-            actualizar_trabajo_impresion(job_id, "failed", str(error))
+            fallar_trabajo_y_devolver_posicion(job_id, str(error))
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo imprimir: {error}",

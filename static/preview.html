@@ -396,6 +396,7 @@
         <div class="actions">
           <button id="saveButton" type="button">Guardar formulario</button>
           <button id="printButton" class="secondary" type="submit">Simular impresion</button>
+          <button id="newSheetButton" class="secondary" type="button">Nueva hoja</button>
           <span id="status" role="status" aria-live="polite"></span>
         </div>
       </form>
@@ -427,6 +428,7 @@
     const status = document.querySelector("#status");
     const saveButton = document.querySelector("#saveButton");
     const printButton = document.querySelector("#printButton");
+    const newSheetButton = document.querySelector("#newSheetButton");
     const printer = document.querySelector("#printer");
     const targetPosition = document.querySelector("#targetPosition");
     const simulationMode = document.querySelector("#simulationMode");
@@ -567,6 +569,34 @@
         status.textContent = error.message;
       } finally {
         saveButton.disabled = false;
+      }
+    });
+
+    newSheetButton.addEventListener("click", async () => {
+      if (!confirm("¿Iniciar una hoja nueva y volver a la posicion 1?")) return;
+      newSheetButton.disabled = true;
+      status.className = "";
+      status.textContent = "Preparando hoja nueva...";
+      try {
+        const response = await fetch("/print-state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ next_position: 1, start_new_strip: true })
+        });
+        const state = await response.json();
+        if (!response.ok) throw new Error(errorMessage(state, "No se pudo iniciar otra hoja"));
+        currentStripId = state.strip_id;
+        printedSlots.fill(null);
+        savedPreview = null;
+        targetPosition.value = "1";
+        renderStrip();
+        status.className = "success";
+        status.textContent = "Hoja nueva preparada. La siguiente impresion usara la posicion 1.";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = error.message;
+      } finally {
+        newSheetButton.disabled = false;
       }
     });
 

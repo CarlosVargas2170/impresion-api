@@ -95,6 +95,11 @@ El archivo `worker_config.json` controla cuántos registros procesa cada ejecuci
 
 Aunque se habiliten todos, cada ciclo reclama e imprime solamente un registro.
 
+Si una impresión falla antes de completarse, la API devuelve automáticamente la
+posición reservada para que el siguiente intento no avance hacia arriba. La vista
+`/preview` también ofrece el botón **Nueva hoja**, que abandona la tira activa y
+reinicia explícitamente la secuencia en la posición 1.
+
 ## Solicitar una impresión
 
 ```sql
