@@ -63,7 +63,7 @@ app = FastAPI(
     version="1.1.0",
     description=(
         "API local para registrar asistentes y asignar automaticamente sus gafetes a "
-        "las tres posiciones de una tira vertical de media hoja Carta.\n\n"
+        "exclusivamente la posicion 2 de una tira vertical de media hoja Carta.\n\n"
         "### Flujo recomendado\n"
         "1. Envia el formulario a `POST /print`.\n"
         "2. La API reserva en SQLite las posiciones `1`, `2`, `3` y luego abre otra tira.\n"
@@ -333,7 +333,7 @@ class ImpresionPosicion(BaseModel):
         },
     )
 
-    position: int = Field(ge=1, le=3, description="Posicion de la tira: 1, 2 o 3.")
+    position: Literal[2] = Field(default=2, description="La impresion solo admite la posicion 2.")
     offset_x_mm: float = Field(default=0, ge=-20, le=20)
     offset_y_mm: float = Field(default=0, ge=-20, le=20)
     printer_name: str | None = Field(default=None, max_length=255)
@@ -371,7 +371,7 @@ class EstadoPosiciones(BaseModel):
                 "next_position": 2,
                 "positions": [
                     {
-                        "position": 1,
+                        "position": 2,
                         "form_id": "a18a826c-e6cd-4b83-b70e-470811a6a2f3",
                         "status": "simulated",
                         "data": {
@@ -396,12 +396,12 @@ class AjusteEstadoPosiciones(BaseModel):
         json_schema_extra={
             "examples": [
                 {"next_position": 2, "start_new_strip": False},
-                {"next_position": 1, "start_new_strip": True},
+                {"next_position": 2, "start_new_strip": True},
             ]
         },
     )
 
-    next_position: int = Field(default=1, ge=1, le=3, description="Siguiente posicion que debe reservarse.")
+    next_position: Literal[2] = Field(default=2, description="La unica posicion habilitada es la 2.")
     start_new_strip: bool = Field(default=False, description="Si es true, abandona la tira activa y crea otra.")
 
 
@@ -410,12 +410,12 @@ class ImpresionAutomaticaEnviada(BaseModel):
         json_schema_extra={
             "example": {
                 "ok": True,
-                "message": "Simulacion asignada a la posicion 1",
+                "message": "Simulacion asignada a la posicion 2",
                 "simulated": True,
                 "printer": None,
                 "id": "a18a826c-e6cd-4b83-b70e-470811a6a2f3",
                 "strip_id": "c7bfbc4c-f970-49b1-a2f8-e1dd2450cdda",
-                "position": 1,
+                "position": 2,
                 "next_position": 2,
                 "strip_completed": False,
                 "view_url": "http://192.168.21.83:9101/forms/a18a826c-e6cd-4b83-b70e-470811a6a2f3",
@@ -595,9 +595,12 @@ def formulario_desde_registro(registro: dict[str, object]) -> Formulario:
     return Formulario.model_validate(datos)
 
 
+POSICION_IMPRESION = 2
+
+
 def _crear_tira(
     conexion: sqlite3.Connection,
-    next_position: int = 1,
+    next_position: int = POSICION_IMPRESION,
 ) -> str:
     strip_id = str(uuid4())
     creado = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -721,10 +724,9 @@ def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
             ).fetchone()
             if tira is None:
                 strip_id = _crear_tira(conexion)
-                position = 1
             else:
                 strip_id = tira["id"]
-                position = int(tira["next_position"])
+            position = POSICION_IMPRESION
 
             job_id = str(uuid4())
             creado = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -737,22 +739,16 @@ def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
                 (job_id, strip_id, form_id, position, creado),
             )
 
-            completa = position == 3
-            siguiente = 1 if completa else position + 1
-            if completa:
-                conexion.execute(
-                    """
-                    UPDATE print_strips
-                    SET next_position = 1, status = 'completed', completed_at = ?
-                    WHERE id = ?
-                    """,
-                    (creado, strip_id),
-                )
-            else:
-                conexion.execute(
-                    "UPDATE print_strips SET next_position = ? WHERE id = ?",
-                    (siguiente, strip_id),
-                )
+            completa = True
+            siguiente = POSICION_IMPRESION
+            conexion.execute(
+                """
+                UPDATE print_strips
+                SET next_position = ?, status = 'completed', completed_at = ?
+                WHERE id = ?
+                """,
+                (POSICION_IMPRESION, creado, strip_id),
+            )
             conexion.commit()
             return job_id, strip_id, position, siguiente, completa
         except Exception:
@@ -809,7 +805,7 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                 return False
 
             posicion = int(trabajo["position"])
-            if posicion == 3:
+            if posicion in (2, 3):
                 otra_tira_activa = conexion.execute(
                     """
                     SELECT 1 FROM print_strips
@@ -824,10 +820,10 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                 cursor = conexion.execute(
                     """
                     UPDATE print_strips
-                    SET next_position = 3, status = 'active', completed_at = NULL
-                    WHERE id = ? AND status = 'completed' AND next_position = 1
+                    SET next_position = ?, status = 'active', completed_at = NULL
+                    WHERE id = ? AND status = 'completed'
                     """,
-                    (trabajo["strip_id"],),
+                    (posicion, trabajo["strip_id"]),
                 )
             else:
                 cursor = conexion.execute(
@@ -1495,8 +1491,8 @@ def ajustar_configuracion_tira(
     tags=["Impresion"],
     summary="Consultar la tira activa y su siguiente posicion",
     description=(
-        "Devuelve la tira activa o la ultima tira completada, la siguiente posicion "
-        "automatica y los formularios asignados a sus tres cuadros."
+        "Devuelve la tira activa o la ultima tira completada y el formulario asignado "
+        "a la unica posicion habilitada: la 2."
     ),
     response_model=EstadoPosiciones,
     operation_id="consultar_estado_posiciones",
@@ -1529,7 +1525,7 @@ def configurar_estado_posiciones(
     summary="Imprimir un formulario en una posicion de la tira",
     description=(
         "Genera una pagina completa para media hoja Carta y coloca el formulario "
-        "guardado en la posicion 1, 2 o 3. Los desplazamientos permiten corregir "
+        "guardado exclusivamente en la posicion 2. Los desplazamientos permiten corregir "
         "variaciones de alimentacion para una impresion concreta."
     ),
     response_model=ImpresionPosicionEnviada,
@@ -1601,8 +1597,8 @@ def imprimir_formulario_en_posicion(
     tags=["Impresion"],
     summary="Asignar e imprimir automaticamente un gafete",
     description=(
-        "Guarda el formulario y reserva atomicamente la siguiente posicion de la tira. "
-        "Las solicitudes avanzan 1, 2, 3 y luego comienzan otra tira. Por defecto "
+        "Guarda el formulario y reserva atomicamente la posicion 2 de una tira nueva. "
+        "Las posiciones 1 y 3 se ignoran. Por defecto "
         "simulate=true evita el acceso a la impresora; usa simulate=false para enviar "
         "el trabajo al controlador de Windows."
     ),

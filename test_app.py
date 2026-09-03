@@ -364,7 +364,7 @@ class ImpresionTiraTests(unittest.TestCase):
         self.assertEqual(argumentos[2:], (107.95, 279.4))
 
     @patch("app.imprimir_windows")
-    def test_post_print_asigna_1_2_3_y_abre_otra_tira(self, imprimir):
+    def test_post_print_solo_asigna_posicion_2_y_abre_otra_tira(self, imprimir):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -377,10 +377,9 @@ class ImpresionTiraTests(unittest.TestCase):
                     for _ in range(4)
                 ]
 
-        self.assertEqual([item["position"] for item in respuestas], [1, 2, 3, 1])
-        self.assertEqual(len({item["strip_id"] for item in respuestas[:3]}), 1)
-        self.assertNotEqual(respuestas[2]["strip_id"], respuestas[3]["strip_id"])
-        self.assertTrue(respuestas[2]["strip_completed"])
+        self.assertEqual([item["position"] for item in respuestas], [2, 2, 2, 2])
+        self.assertEqual(len({item["strip_id"] for item in respuestas}), 4)
+        self.assertTrue(all(item["strip_completed"] for item in respuestas))
         self.assertTrue(all(item["simulated"] for item in respuestas))
         imprimir.assert_not_called()
 
@@ -399,11 +398,12 @@ class ImpresionTiraTests(unittest.TestCase):
                 estado_fallido = api.obtener_estado_posiciones()
                 reintento = api.procesar_impresion(self.formulario(), simulate=True)
 
-        self.assertEqual(estado_fallido["next_position"], 1)
+        self.assertEqual(estado_fallido["next_position"], 2)
         self.assertEqual(estado_fallido["positions"][0]["status"], "failed")
-        self.assertEqual(reintento["position"], 1)
+        self.assertEqual(reintento["position"], 2)
+        self.assertEqual(reintento["strip_id"], estado_fallido["strip_id"])
 
-    def test_fallo_en_posicion_3_reabre_la_misma_tira(self):
+    def test_fallo_en_posicion_2_reabre_la_tira_fallida(self):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -419,10 +419,12 @@ class ImpresionTiraTests(unittest.TestCase):
 
                 estado = api.obtener_estado_posiciones()
 
-        self.assertEqual(estado["strip_id"], primera["strip_id"])
-        self.assertEqual(estado["next_position"], 3)
+        self.assertNotEqual(estado["strip_id"], primera["strip_id"])
+        self.assertEqual(estado["next_position"], 2)
+        self.assertEqual(estado["positions"][0]["position"], 2)
+        self.assertEqual(estado["positions"][0]["status"], "failed")
 
-    def test_solicitudes_simultaneas_no_repiten_posicion_en_una_tira(self):
+    def test_solicitudes_simultaneas_usan_posicion_2_en_tiras_separadas(self):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -443,9 +445,9 @@ class ImpresionTiraTests(unittest.TestCase):
             posiciones_por_tira.setdefault(respuesta["strip_id"], set()).add(
                 respuesta["position"]
             )
-        self.assertEqual(len(posiciones_por_tira), 2)
+        self.assertEqual(len(posiciones_por_tira), 6)
         self.assertTrue(
-            all(posiciones == {1, 2, 3} for posiciones in posiciones_por_tira.values())
+            all(posiciones == {2} for posiciones in posiciones_por_tira.values())
         )
 
     def test_endpoint_permite_corregir_siguiente_posicion(self):
@@ -458,7 +460,7 @@ class ImpresionTiraTests(unittest.TestCase):
                 api.inicializar_db()
                 inicial = api.obtener_estado_posiciones()
                 corregido = api.configurar_estado_posiciones(
-                    api.AjusteEstadoPosiciones(next_position=3)
+                    api.AjusteEstadoPosiciones(next_position=2)
                 )
                 nueva = api.configurar_estado_posiciones(
                     api.AjusteEstadoPosiciones(
@@ -467,8 +469,8 @@ class ImpresionTiraTests(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(inicial["next_position"], 1)
-        self.assertEqual(corregido["next_position"], 3)
+        self.assertEqual(inicial["next_position"], 2)
+        self.assertEqual(corregido["next_position"], 2)
         self.assertEqual(nueva["next_position"], 2)
         self.assertNotEqual(corregido["strip_id"], nueva["strip_id"])
 
@@ -583,7 +585,7 @@ class DocumentacionOpenAPITests(unittest.TestCase):
         ejemplo = esquema["components"]["schemas"][
             "ImpresionAutomaticaEnviada"
         ]["example"]
-        self.assertEqual(ejemplo["position"], 1)
+        self.assertEqual(ejemplo["position"], 2)
         self.assertEqual(ejemplo["next_position"], 2)
 
         ajuste = esquema["components"]["schemas"]["AjusteEstadoPosiciones"]

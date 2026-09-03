@@ -2,10 +2,10 @@
 
 El proyecto expone la API FastAPI existente y un worker independiente que consulta
 continuamente la tabla `persons` de PostgreSQL. El worker toma registros pendientes,
-los imprime en las posiciones 1, 2 y 3 del flujo actual y actualiza su estado.
+los imprime exclusivamente en la posicion 2 y actualiza su estado.
 
-La secuencia física de la tira avanza desde abajo hacia arriba: posición 1 inferior,
-posición 2 central y posición 3 superior. Después se crea una nueva tira.
+Cada trabajo usa la posición 2 central. Las posiciones 1 y 3 se ignoran y el
+siguiente trabajo comienza una tira nueva.
 
 La configuración de la tira incluye `form_padding_left_mm`, con `6 mm` por defecto,
 para separar el contenido del borde izquierdo. Puede ajustarse mediante `PUT /print-layout`
@@ -98,7 +98,7 @@ Aunque se habiliten todos, cada ciclo reclama e imprime solamente un registro.
 Si una impresión falla antes de completarse, la API devuelve automáticamente la
 posición reservada para que el siguiente intento no avance hacia arriba. La vista
 `/preview` también ofrece el botón **Nueva hoja**, que abandona la tira activa y
-reinicia explícitamente la secuencia en la posición 1.
+reinicia explícitamente la impresión en la posición 2.
 
 ## Solicitar una impresión
 
