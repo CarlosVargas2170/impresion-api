@@ -286,7 +286,7 @@ class ConfiguracionTira(BaseModel):
         json_schema_extra={
             "example": {
                 "paper_width_mm": 107.95,
-                "paper_height_mm": 279.4,
+                "paper_height_mm": 300,
                 "badge_width_mm": 100,
                 "badge_height_mm": 80,
                 "form_padding_left_mm": 6,
@@ -759,7 +759,9 @@ PAPEL_ALTO_MM = 100
 STICKER_ANCHO_MM = 85
 DPI_RENDER = 300
 QR_TAMANO_MM = 17
-QR_MARGEN_BORDE_MM = 2
+QR_MARGEN_INFERIOR_MM = 6
+QR_MARGEN_DERECHO_MM = 2
+QR_DESPLAZAMIENTO_ARRIBA_MM = 3
 PADDING_ADICIONAL_POR_POSICION_MM = {1: 4, 2: 2, 3: 0}
 FUENTE_REGULAR = Path("C:/Windows/Fonts/arial.ttf")
 FUENTE_NEGRITA = Path("C:/Windows/Fonts/arialbd.ttf")
@@ -891,24 +893,24 @@ def generar_imagen_impresion(
         if parte
     )
 
-    dibujar_campo(dibujo, "Nombre", data.first_name, 4.5, 7.5, 30, 18, True)
-    dibujar_campo(dibujo, "Apellidos", apellidos, 20.5, 23.5, 22, 14, True)
-    dibujar_campo(dibujo, "Empresa", data.company, 34, 37, 18, 11, True)
-    dibujar_campo(dibujo, "Cargo", data.job_title, 46, 49, 16, 10, True)
+    dibujar_campo(dibujo, "Nombre", data.first_name, 3, 6, 18, 12, True)
+    dibujar_campo(dibujo, "Apellidos", apellidos, 15, 18, 30, 18, True)
+    dibujar_campo(dibujo, "Empresa", data.company, 32, 35, 18, 11, True)
+    dibujar_campo(dibujo, "Cargo", data.job_title, 44, 47, 24, 14, True)
     dibujar_campo(
         dibujo,
         "Correo",
         str(data.email) if data.email else None,
         58,
         61,
-        9,
-        6,
+        18,
+        10,
         True,
     )
     if incluir_qr:
         codigo_qr = generar_codigo_qr(url_formulario(form_id))
         qr_x = (imagen.width - codigo_qr.width) // 2
-        qr_y = imagen.height - codigo_qr.height - mm_a_px(QR_MARGEN_BORDE_MM)
+        qr_y = imagen.height - codigo_qr.height - mm_a_px(QR_MARGEN_INFERIOR_MM)
         imagen.paste(codigo_qr, (qr_x, qr_y))
     return imagen
 
@@ -957,8 +959,11 @@ def generar_imagen_tira(
 
     # El QR se agrega despues del padding para que nunca se recorte en la posicion 1.
     codigo_qr = generar_codigo_qr(url_formulario(form_id))
-    qr_x = gafete.width - codigo_qr.width - mm_a_px(QR_MARGEN_BORDE_MM)
-    qr_y = (gafete.height - codigo_qr.height) // 2
+    qr_x = gafete.width - codigo_qr.width - mm_a_px(QR_MARGEN_DERECHO_MM)
+    qr_y = (
+        (gafete.height - codigo_qr.height) // 2
+        - mm_a_px(QR_DESPLAZAMIENTO_ARRIBA_MM)
+    )
     gafete.paste(codigo_qr, (qr_x, qr_y))
 
     separacion = (
