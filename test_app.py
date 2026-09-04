@@ -1,5 +1,8 @@
 import tempfile
 import unittest
+import sqlite3
+import multiprocessing
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,6 +24,29 @@ from app import (
     previsualizar,
     url_networking,
 )
+
+
+def intentar_propiedad_en_subproceso(
+    recurso_fisico: str,
+    directorio_datos: str,
+    resultado,
+    es_printer_id: bool = False,
+) -> None:
+    import app as api_hija
+
+    api_hija.DIRECTORIO_DATOS = Path(directorio_datos)
+    try:
+        propiedad = (
+            api_hija.poseer_printer_id(recurso_fisico)
+            if es_printer_id
+            else api_hija.poseer_impresora(recurso_fisico)
+        )
+        with propiedad:
+            resultado.send("adquirido")
+    except RuntimeError:
+        resultado.send("bloqueado")
+    finally:
+        resultado.close()
 
 
 class FormularioTests(unittest.TestCase):
@@ -199,7 +225,7 @@ class ImpresionTests(unittest.TestCase):
         resultado = imprimir_windows(self.imagen_prueba(), "Epson L3310")
 
         self.assertEqual(resultado, "Epson L3310")
-        bloquear.assert_called_once_with()
+        bloquear.assert_called_once_with("Epson L3310")
         bloquear.return_value.__enter__.assert_called_once_with()
         bloquear.return_value.__exit__.assert_called_once()
         imprimir.assert_called_once()
@@ -625,6 +651,391 @@ class ImpresionTiraTests(unittest.TestCase):
         self.assertIsNotNone(estado["last_heartbeat"])
 
 
+class ImpresorasMultiplesTests(unittest.TestCase):
+    def formulario(self):
+        return Formulario(**FormularioTests().datos_validos())
+
+    def test_migra_tira_legacy_activa_sin_perder_estado_ni_jobs(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            ruta_db = directorio / "forms.db"
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", ruta_db
+            ):
+                with closing(sqlite3.connect(ruta_db)) as conexion:
+                    conexion.executescript(
+                        """
+                        CREATE TABLE forms (
+                            id TEXT PRIMARY KEY,
+                            payload TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        );
+                        CREATE TABLE print_strips (
+                            id TEXT PRIMARY KEY,
+                            next_position INTEGER NOT NULL,
+                            status TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            completed_at TEXT
+                        );
+                        CREATE TABLE print_jobs (
+                            id TEXT PRIMARY KEY,
+                            strip_id TEXT NOT NULL,
+                            form_id TEXT NOT NULL,
+                            position INTEGER NOT NULL,
+                            status TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            error TEXT
+                        );
+                        """
+                    )
+                    conexion.execute(
+                        "INSERT INTO forms VALUES ('form-legacy', '{}', '2026-01-01')"
+                    )
+                    conexion.execute(
+                        "INSERT INTO print_strips VALUES "
+                        "('strip-legacy', 2, 'active', '2026-01-01', NULL)"
+                    )
+                    conexion.execute(
+                        "INSERT INTO print_jobs VALUES "
+                        "('job-legacy', 'strip-legacy', 'form-legacy', 1, "
+                        "'sent', '2026-01-01', NULL)"
+                    )
+                    conexion.commit()
+
+                api.inicializar_db()
+                api.inicializar_db()
+
+                with closing(sqlite3.connect(ruta_db)) as conexion:
+                    tira = conexion.execute(
+                        "SELECT id, printer_id, next_position, status "
+                        "FROM print_strips"
+                    ).fetchone()
+                    trabajo = conexion.execute(
+                        "SELECT id, strip_id FROM print_jobs"
+                    ).fetchone()
+                    indices = {
+                        fila[1]
+                        for fila in conexion.execute("PRAGMA index_list(print_strips)")
+                    }
+
+        self.assertEqual(tira, ("strip-legacy", "default", 2, "active"))
+        self.assertEqual(trabajo, ("job-legacy", "strip-legacy"))
+        self.assertIn("idx_print_strips_printer_status", indices)
+
+    def test_sequential_y_fixed_mantienen_tiras_independientes(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", directorio / "forms.db"
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                a_primera = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_a"
+                )
+                b_primera = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_b"
+                )
+                a_segunda = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_a"
+                )
+                b_segunda = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_b"
+                )
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(
+                        position_mode="fixed", fixed_position=2
+                    )
+                )
+                a_fija = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_a"
+                )
+                b_fija = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_b"
+                )
+
+        self.assertEqual(
+            [a_primera["position"], b_primera["position"], a_segunda["position"], b_segunda["position"]],
+            [1, 1, 2, 2],
+        )
+        self.assertEqual(a_primera["strip_id"], a_segunda["strip_id"])
+        self.assertEqual(b_primera["strip_id"], b_segunda["strip_id"])
+        self.assertNotEqual(a_primera["strip_id"], b_primera["strip_id"])
+        self.assertEqual((a_fija["position"], b_fija["position"]), (2, 2))
+        self.assertNotEqual(a_fija["strip_id"], b_fija["strip_id"])
+
+    def test_fallo_y_reapertura_de_a_no_afecta_tira_activa_de_b(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", directorio / "forms.db"
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                a_uno = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_a"
+                )
+                api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_a"
+                )
+                b_uno = api.procesar_impresion(
+                    self.formulario(), simulate=True, printer_id="printer_b"
+                )
+                with patch("app.imprimir_windows", side_effect=RuntimeError("sin papel")):
+                    with self.assertRaises(HTTPException):
+                        api.procesar_impresion(
+                            self.formulario(),
+                            simulate=False,
+                            printer_id="printer_a",
+                        )
+                estado_a = api.obtener_estado_posiciones("printer_a")
+                estado_b = api.obtener_estado_posiciones("printer_b")
+
+        self.assertEqual(estado_a["strip_id"], a_uno["strip_id"])
+        self.assertEqual(estado_a["next_position"], 3)
+        self.assertEqual(estado_a["positions"][-1]["status"], "failed")
+        self.assertEqual(estado_b["strip_id"], b_uno["strip_id"])
+        self.assertEqual(estado_b["next_position"], 2)
+
+    def test_reservas_concurrentes_no_mezclan_tiras(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", directorio / "forms.db"
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                impresoras = ["printer_a", "printer_b"] * 6
+                with ThreadPoolExecutor(max_workers=6) as ejecutor:
+                    reservas = list(
+                        ejecutor.map(
+                            lambda item: api.reservar_posicion(str(item[0]), item[1]),
+                            enumerate(impresoras),
+                        )
+                    )
+                with closing(sqlite3.connect(directorio / "forms.db")) as conexion:
+                    tiras = conexion.execute(
+                        "SELECT id, printer_id FROM print_strips"
+                    ).fetchall()
+                    posiciones_duplicadas = conexion.execute(
+                        "SELECT strip_id, position FROM print_jobs "
+                        "GROUP BY strip_id, position HAVING COUNT(*) > 1"
+                    ).fetchall()
+
+        strip_ids_por_impresora = {"printer_a": set(), "printer_b": set()}
+        for reserva, printer_id in zip(reservas, impresoras, strict=True):
+            strip_ids_por_impresora[printer_id].add(reserva[1])
+        self.assertTrue(strip_ids_por_impresora["printer_a"])
+        self.assertTrue(strip_ids_por_impresora["printer_b"])
+        self.assertTrue(
+            strip_ids_por_impresora["printer_a"].isdisjoint(
+                strip_ids_por_impresora["printer_b"]
+            )
+        )
+        self.assertEqual(
+            {printer_id for _, printer_id in tiras}, {"default", "printer_a", "printer_b"}
+        )
+        self.assertEqual(posiciones_duplicadas, [])
+
+    def test_heartbeats_y_locks_separan_recursos(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", directorio / "forms.db"
+            ):
+                api.inicializar_db()
+                api.registrar_heartbeat_worker(pid=100, printer_id="printer_a")
+                api.registrar_heartbeat_worker(pid=200, printer_id="printer_b")
+                api.registrar_heartbeat_worker(pid=300)
+                estado_a = api._estado_ejecucion_worker("printer_a")
+                estado_b = api._estado_ejecucion_worker("printer_b")
+                estado_default = api._estado_ejecucion_worker()
+                with closing(sqlite3.connect(directorio / "forms.db")) as conexion:
+                    claves = {
+                        fila[0] for fila in conexion.execute("SELECT key FROM settings")
+                    }
+                ruta_a = api.ruta_bloqueo_impresora("EPSON A")
+                ruta_a_misma = api.ruta_bloqueo_impresora("epson a")
+                ruta_b = api.ruta_bloqueo_impresora("EPSON B")
+
+        self.assertEqual(
+            (estado_a["worker_pid"], estado_b["worker_pid"], estado_default["worker_pid"]),
+            (100, 200, 300),
+        )
+        self.assertEqual(
+            claves,
+            {"worker_heartbeat", "worker_heartbeat:printer_a", "worker_heartbeat:printer_b"},
+        )
+        self.assertEqual(ruta_a, ruta_a_misma)
+        self.assertNotEqual(ruta_a, ruta_b)
+        self.assertIs(
+            api._bloqueo_hilo_impresora("EPSON A"),
+            api._bloqueo_hilo_impresora("epson a"),
+        )
+        self.assertIsNot(
+            api._bloqueo_hilo_impresora("EPSON A"),
+            api._bloqueo_hilo_impresora("EPSON B"),
+        )
+
+    def test_ownership_impide_dos_workers_y_no_bloquea_impresion_corta(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio):
+                with api.poseer_impresora("EPSON A"):
+                    contexto = multiprocessing.get_context("spawn")
+                    receptor, emisor = contexto.Pipe(duplex=False)
+                    proceso = contexto.Process(
+                        target=intentar_propiedad_en_subproceso,
+                        args=("EPSON A", str(directorio), emisor),
+                    )
+                    proceso.start()
+                    emisor.close()
+                    self.assertTrue(receptor.poll(10))
+                    self.assertEqual(receptor.recv(), "bloqueado")
+                    proceso.join(timeout=10)
+                    self.assertFalse(proceso.is_alive())
+                    self.assertEqual(proceso.exitcode, 0)
+                    receptor.close()
+                    with self.assertRaisesRegex(RuntimeError, "Ya existe un worker"):
+                        with api.poseer_impresora("epson a"):
+                            pass
+                    with api.poseer_impresora("EPSON B"):
+                        pass
+                    with api.bloquear_impresora("EPSON A"):
+                        self.assertTrue(api.ruta_bloqueo_impresora("EPSON A").exists())
+
+                with api.poseer_impresora("EPSON A"):
+                    self.assertTrue(api.ruta_propiedad_impresora("EPSON A").exists())
+
+    def test_ownership_logico_y_fisico_son_independientes(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio):
+                with api.poseer_printer_id("default"), api.poseer_impresora("EPSON A"):
+                    with self.assertRaisesRegex(RuntimeError, "printer_id=default"):
+                        with api.poseer_printer_id("default"):
+                            pass
+                    with api.poseer_printer_id("printer_b"):
+                        with self.assertRaisesRegex(RuntimeError, "recurso fisico"):
+                            with api.poseer_impresora("EPSON A"):
+                                pass
+                    with api.poseer_printer_id("printer_b"), api.poseer_impresora(
+                        "EPSON B"
+                    ):
+                        pass
+
+                contexto = multiprocessing.get_context("spawn")
+                receptor, emisor = contexto.Pipe(duplex=False)
+                with api.poseer_printer_id("default"):
+                    proceso = contexto.Process(
+                        target=intentar_propiedad_en_subproceso,
+                        args=("default", str(directorio), emisor, True),
+                    )
+                    proceso.start()
+                    emisor.close()
+                    self.assertTrue(receptor.poll(10))
+                    self.assertEqual(receptor.recv(), "bloqueado")
+                    proceso.join(timeout=10)
+                    self.assertFalse(proceso.is_alive())
+                    self.assertEqual(proceso.exitcode, 0)
+                    receptor.close()
+
+                with api.poseer_printer_id("default"):
+                    pass
+
+    def test_normaliza_printer_id_y_libera_lock_si_falla_la_apertura(self):
+        self.assertEqual(api.normalizar_printer_id(None), "default")
+        self.assertEqual(api.normalizar_printer_id(""), "default")
+        self.assertEqual(api.normalizar_printer_id(" Printer_B "), "printer_b")
+        self.assertEqual(api.normalizar_printer_id("PRINTER_B"), "printer_b")
+
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch(
+                "app.ruta_propiedad_impresora"
+            ) as ruta_propiedad:
+                ruta_propiedad.return_value.open.side_effect = OSError("sin acceso")
+                with self.assertRaisesRegex(OSError, "sin acceso"):
+                    with api.poseer_impresora("EPSON A"):
+                        pass
+                self.assertFalse(api._bloqueo_propiedad_impresora("EPSON A").locked())
+
+            with patch.object(api, "DIRECTORIO_DATOS", directorio):
+                with api.poseer_impresora("EPSON A"):
+                    pass
+
+    def test_http_controla_tiras_por_printer_id_y_legacy_usa_default(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with patch.object(api, "DIRECTORIO_DATOS", directorio), patch.object(
+                api, "RUTA_DB", directorio / "forms.db"
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                legacy = api.imprimir(
+                    Formulario(
+                        **FormularioTests().datos_validos(printer_name="EPSON A")
+                    ),
+                    simulate=True,
+                )
+                printer_b = api.procesar_impresion(
+                    self.formulario(),
+                    simulate=True,
+                    printer_id="printer_b",
+                )
+                with self.assertRaises(TypeError):
+                    api.imprimir(
+                        self.formulario(),
+                        simulate=True,
+                        printer_id="printer_b",
+                    )
+                estado_default_antes = api.consultar_estado_posiciones()
+                estado_b_antes = api.consultar_estado_posiciones("printer_b")
+                ajuste_b = api.configurar_estado_posiciones(
+                    api.AjusteEstadoPosiciones(next_position=3),
+                    printer_id="printer_b",
+                )
+                estado_default_despues_ajuste = api.consultar_estado_posiciones()
+                reset_b = api.resetear_posicion_worker("printer_b")
+                estado_b_despues_reset_b = api.consultar_estado_posiciones("printer_b")
+                estado_default_despues_reset_b = api.consultar_estado_posiciones()
+                reset_legacy = api.resetear_posicion_worker()
+                estado_b_despues_reset_legacy = api.consultar_estado_posiciones(
+                    "printer_b"
+                )
+
+        self.assertNotEqual(legacy["strip_id"], printer_b["strip_id"])
+        self.assertEqual(estado_b_antes["strip_id"], printer_b["strip_id"])
+        self.assertEqual(ajuste_b["strip_id"], printer_b["strip_id"])
+        self.assertEqual(estado_default_antes["strip_id"], legacy["strip_id"])
+        self.assertEqual(
+            estado_default_despues_ajuste["strip_id"],
+            legacy["strip_id"],
+        )
+        self.assertEqual(
+            estado_default_despues_reset_b["strip_id"],
+            legacy["strip_id"],
+        )
+        self.assertNotEqual(
+            estado_b_despues_reset_b["strip_id"],
+            estado_b_antes["strip_id"],
+        )
+        self.assertEqual(reset_b["next_position"], 1)
+        self.assertEqual(
+            estado_b_despues_reset_legacy["strip_id"],
+            estado_b_despues_reset_b["strip_id"],
+        )
+        self.assertNotEqual(reset_legacy["next_position"], estado_default_antes["next_position"])
+
+
 class AlmacenamientoTests(unittest.TestCase):
     def test_guarda_consulta_y_genera_qr(self):
         with tempfile.TemporaryDirectory() as temporal:
@@ -804,6 +1215,24 @@ class DocumentacionOpenAPITests(unittest.TestCase):
         )
         self.assertIn("sin usar Windows", parametro_simulacion["description"])
         self.assertTrue(parametro_simulacion["schema"]["default"])
+        self.assertNotIn(
+            "printer_id",
+            {parametro["name"] for parametro in operacion["parameters"]},
+        )
+
+        bluetooth = esquema["paths"]["/print/bluetooth"]["post"]["parameters"]
+        self.assertNotIn("printer_id", {parametro["name"] for parametro in bluetooth})
+
+        for ruta in ("/print-state", "/worker-control/reset-position"):
+            parametros = esquema["paths"][ruta][
+                "post" if ruta != "/print-state" else "get"
+            ]["parameters"]
+            printer_id = next(
+                parametro
+                for parametro in parametros
+                if parametro["name"] == "printer_id"
+            )
+            self.assertEqual(printer_id["schema"]["default"], "default")
 
         ejemplo = esquema["components"]["schemas"][
             "ImpresionAutomaticaEnviada"

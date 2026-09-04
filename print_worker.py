@@ -12,7 +12,11 @@ from pydantic import ValidationError
 
 from app import (
     Formulario,
+    nombre_impresora_efectiva,
+    normalizar_printer_id,
     obtener_control_worker,
+    poseer_impresora,
+    poseer_printer_id,
     procesar_impresion,
     registrar_heartbeat_worker,
 )
@@ -212,6 +216,26 @@ def cargar_configuracion_worker() -> dict[str, Any]:
     return contenido
 
 
+def cargar_printer_id(configuracion: dict[str, Any]) -> str:
+    """Resuelve la impresora logica sin requerir cambios en instalaciones legacy."""
+
+    valor = os.getenv("PRINT_PRINTER_ID")
+    if valor is None:
+        valor = configuracion.get("printer_id")
+    return normalizar_printer_id(valor if isinstance(valor, str) else None)
+
+
+def recurso_fisico_worker(
+    transport: str,
+    printer_name: str | None,
+    bluetooth_port: str | None,
+) -> str:
+    if transport == "bluetooth":
+        assert bluetooth_port is not None
+        return f"bluetooth:{bluetooth_port}"
+    return nombre_impresora_efectiva(printer_name)
+
+
 def cargar_url_postgres() -> str:
     url = os.getenv("POSTGRES_DATABASE_URL")
     if not url:
@@ -390,6 +414,7 @@ def procesar_persona(
     transport: str = "windows",
     bluetooth_port: str | None = None,
     bluetooth_baudrate: int = 9600,
+    printer_id: str = "default",
 ) -> bool:
     person_id = persona["id"]
     try:
@@ -400,6 +425,7 @@ def procesar_persona(
             transport=transport,
             bluetooth_port=bluetooth_port,
             bluetooth_baudrate=bluetooth_baudrate,
+            printer_id=printer_id,
         )
     except Exception as error:
         detalle = descripcion_error(error)
@@ -443,6 +469,7 @@ def ejecutar_ciclo(
     transport: str = "windows",
     bluetooth_port: str | None = None,
     bluetooth_baudrate: int = 9600,
+    printer_id: str = "default",
 ) -> int:
     procesadas = 0
     # La impresora es un recurso fisico exclusivo: cada ciclo reclama como maximo
@@ -459,6 +486,7 @@ def ejecutar_ciclo(
             transport,
             bluetooth_port,
             bluetooth_baudrate,
+            printer_id,
         )
         procesadas += 1
     return procesadas
@@ -467,6 +495,7 @@ def ejecutar_ciclo(
 def ejecutar_worker(stop_event: threading.Event | None = None) -> None:
     stop_event = stop_event or threading.Event()
     config = cargar_configuracion_worker()
+    printer_id = cargar_printer_id(config)
     record_order = str(config.get("record_order", "newest"))
     cola = ColaImpresionPostgres(cargar_url_postgres(), record_order)
     poll_seconds = cargar_decimal(
@@ -509,80 +538,92 @@ def ejecutar_worker(stop_event: threading.Event | None = None) -> None:
     if max_records < 1:
         raise RuntimeError("max_records debe ser mayor o igual a 1")
 
-    LOGGER.info(
-        "Worker iniciado: transporte=%s, orden=%s, todos=%s, maximo=%s, "
-        "intervalo=%ss, lote=%s, simulacion=%s",
+    recurso_fisico = recurso_fisico_worker(
         transport,
-        record_order,
-        print_all,
-        max_records,
-        poll_seconds,
-        batch_size,
-        simulate,
+        printer_name,
+        bluetooth_port,
     )
-    heartbeat_stop = threading.Event()
+    # El orden logico -> fisico es fijo para evitar deadlocks entre workers.
+    with poseer_printer_id(printer_id), poseer_impresora(recurso_fisico):
+        LOGGER.info(
+            "Worker iniciado: transporte=%s, orden=%s, todos=%s, maximo=%s, "
+            "intervalo=%ss, lote=%s, simulacion=%s, printer_id=%s, printer_name=%s",
+            transport,
+            record_order,
+            print_all,
+            max_records,
+            poll_seconds,
+            batch_size,
+            simulate,
+            printer_id,
+            printer_name,
+        )
+        heartbeat_stop = threading.Event()
 
-    def mantener_heartbeat() -> None:
-        while not heartbeat_stop.is_set():
-            try:
-                registrar_heartbeat_worker()
-            except Exception:
-                LOGGER.exception("No se pudo actualizar la senal de vida del worker")
-            heartbeat_stop.wait(2.0)
+        def mantener_heartbeat() -> None:
+            while not heartbeat_stop.is_set():
+                try:
+                    registrar_heartbeat_worker(printer_id=printer_id)
+                except Exception:
+                    LOGGER.exception("No se pudo actualizar la senal de vida del worker")
+                heartbeat_stop.wait(2.0)
 
-    heartbeat_thread = threading.Thread(
-        target=mantener_heartbeat,
-        name="worker-heartbeat",
-        daemon=True,
-    )
-    heartbeat_thread.start()
-    total_processed = 0
-    estaba_pausado = False
-    try:
-        while not stop_event.is_set():
-            inicio = monotonic()
-            try:
-                control = obtener_control_worker()
-            except Exception:
-                LOGGER.exception("No se pudo consultar el control local del worker")
-                stop_event.wait(min(poll_seconds, 1.0))
-                continue
-            if not control.enabled:
-                if not estaba_pausado:
-                    LOGGER.info("Worker pausado desde la consola de impresion manual")
-                estaba_pausado = True
-                stop_event.wait(min(poll_seconds, 1.0))
-                continue
-            if estaba_pausado:
-                LOGGER.info("Worker reanudado desde la consola de impresion manual")
-                estaba_pausado = False
-            try:
-                procesadas = ejecutar_ciclo(
-                    cola,
-                    batch_size=batch_size,
-                    simulate=simulate,
-                    printer_name=printer_name,
-                    transport=transport,
-                    bluetooth_port=bluetooth_port,
-                    bluetooth_baudrate=bluetooth_baudrate,
-                )
-                total_processed += procesadas
-            except Exception:
-                procesadas = 0
-                LOGGER.exception("No se pudo consultar la cola de impresion en PostgreSQL")
+        heartbeat_thread = threading.Thread(
+            target=mantener_heartbeat,
+            name="worker-heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        total_processed = 0
+        estaba_pausado = False
+        try:
+            while not stop_event.is_set():
+                inicio = monotonic()
+                try:
+                    control = obtener_control_worker()
+                except Exception:
+                    LOGGER.exception("No se pudo consultar el control local del worker")
+                    stop_event.wait(min(poll_seconds, 1.0))
+                    continue
+                if not control.enabled:
+                    if not estaba_pausado:
+                        LOGGER.info("Worker pausado desde la consola de impresion manual")
+                    estaba_pausado = True
+                    stop_event.wait(min(poll_seconds, 1.0))
+                    continue
+                if estaba_pausado:
+                    LOGGER.info("Worker reanudado desde la consola de impresion manual")
+                    estaba_pausado = False
+                try:
+                    procesadas = ejecutar_ciclo(
+                        cola,
+                        batch_size=batch_size,
+                        simulate=simulate,
+                        printer_name=printer_name,
+                        transport=transport,
+                        bluetooth_port=bluetooth_port,
+                        bluetooth_baudrate=bluetooth_baudrate,
+                        printer_id=printer_id,
+                    )
+                    total_processed += procesadas
+                except Exception:
+                    procesadas = 0
+                    LOGGER.exception(
+                        "No se pudo consultar la cola de impresion en PostgreSQL"
+                    )
 
-            if not print_all and total_processed >= max_records:
-                LOGGER.info(
-                    "Limite controlado alcanzado: %s registro(s) procesado(s)",
-                    total_processed,
-                )
-                break
+                if not print_all and total_processed >= max_records:
+                    LOGGER.info(
+                        "Limite controlado alcanzado: %s registro(s) procesado(s)",
+                        total_processed,
+                    )
+                    break
 
-            transcurrido = monotonic() - inicio
-            stop_event.wait(max(0.0, poll_seconds - transcurrido))
-    finally:
-        heartbeat_stop.set()
-        heartbeat_thread.join(timeout=3.0)
+                transcurrido = monotonic() - inicio
+                stop_event.wait(max(0.0, poll_seconds - transcurrido))
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=3.0)
 
 
 def main() -> None:

@@ -78,14 +78,28 @@ class EndpointBluetoothTests(unittest.TestCase):
                 patch.object(api, "RUTA_DB", directory / "forms.db"),
             ):
                 api.inicializar_db()
+                printer_b = api.procesar_impresion(
+                    formulario_prueba(),
+                    simulate=True,
+                    transport="bluetooth",
+                    bluetooth_port="COM8",
+                    printer_id="printer_b",
+                )
                 result = api.imprimir_gafete_bluetooth(
                     formulario_prueba(),
                     port="COM7",
                     baudrate=9600,
                     simulate=False,
                 )
+                with self.assertRaises(TypeError):
+                    api.imprimir_gafete_bluetooth(
+                        formulario_prueba(),
+                        port="COM7",
+                        printer_id="printer_b",
+                    )
 
         self.assertTrue(result["ok"])
+        self.assertNotEqual(result["strip_id"], printer_b["strip_id"])
         self.assertEqual(result["printer"], "COM7")
         image, port, baudrate = enviar.call_args.args
         self.assertEqual(image.width, 384)

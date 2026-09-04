@@ -67,6 +67,7 @@ El worker imprime físicamente por defecto. Estas variables permiten configurarl
 | `PRINT_POLL_SECONDS` | `3` | Intervalo de consulta cuando no hay trabajo |
 | `PRINT_SIMULATE` | `false` | Registra posiciones sin usar la impresora |
 | `PRINT_TRANSPORT` | `windows` | `windows` o `bluetooth` |
+| `PRINT_PRINTER_ID` | `default` | Identificador logico que separa la tira y heartbeat de cada worker |
 | `PRINT_PRINTER_NAME` | vacía | Impresora de Windows; vacía usa la predeterminada |
 | `BLUETOOTH_COM_PORT` | vacía | Puerto asignado a la PT-210, por ejemplo `COM7` |
 | `BLUETOOTH_BAUDRATE` | `9600` | Velocidad del puerto serie Bluetooth |
@@ -86,6 +87,7 @@ El archivo `worker_config.json` controla cuántos registros procesa cada ejecuci
   "poll_seconds": 3,
   "simulate": false,
   "transport": "windows",
+  "printer_id": "default",
   "printer_name": "EPSON L3310 Series"
 }
 ```
@@ -97,6 +99,12 @@ El archivo `worker_config.json` controla cuántos registros procesa cada ejecuci
 - `record_order: "oldest"` selecciona primero el registro más antiguo.
 
 Aunque se habiliten todos, cada ciclo reclama e imprime solamente un registro.
+
+`PRINT_PRINTER_ID` tiene prioridad sobre `printer_id` de `worker_config.json`. Si
+ninguno se configura, se usa `default`, por lo que las instalaciones existentes
+conservan la misma tira, heartbeat y comportamiento. Para dos impresoras físicas,
+ejecuta un worker por cada nombre de impresora y asigna un `PRINT_PRINTER_ID`
+distinto a cada proceso.
 
 Si una impresión falla antes de completarse, la API devuelve automáticamente la
 posición reservada para que el siguiente intento no avance hacia arriba. La vista

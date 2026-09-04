@@ -1,4 +1,5 @@
 import json
+import hashlib
 import math
 import os
 import sqlite3
@@ -610,12 +611,30 @@ def inicializar_db() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS print_strips (
                     id TEXT PRIMARY KEY,
+                    printer_id TEXT NOT NULL DEFAULT 'default',
                     next_position INTEGER NOT NULL,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     completed_at TEXT
                 )
                 """
+            )
+            columnas_tiras = {
+                fila["name"]
+                for fila in conexion.execute("PRAGMA table_info(print_strips)")
+            }
+            if "printer_id" not in columnas_tiras:
+                conexion.execute(
+                    "ALTER TABLE print_strips "
+                    "ADD COLUMN printer_id TEXT NOT NULL DEFAULT 'default'"
+                )
+            conexion.execute(
+                "UPDATE print_strips SET printer_id = 'default' "
+                "WHERE printer_id IS NULL OR trim(printer_id) = ''"
+            )
+            conexion.execute(
+                "CREATE INDEX IF NOT EXISTS idx_print_strips_printer_status "
+                "ON print_strips (printer_id, status)"
             )
             conexion.execute(
                 """
@@ -638,6 +657,21 @@ CLAVE_CONFIGURACION_TIRA = "print_layout"
 CLAVE_CONTROL_WORKER = "worker_control"
 CLAVE_HEARTBEAT_WORKER = "worker_heartbeat"
 HEARTBEAT_WORKER_MAX_SEGUNDOS = 6
+
+
+def normalizar_printer_id(printer_id: str | None = None) -> str:
+    """Devuelve el identificador logico con compatibilidad para la instalacion legacy."""
+
+    if not isinstance(printer_id, str):
+        return "default"
+    return printer_id.strip().casefold() or "default"
+
+
+def _clave_heartbeat_worker(printer_id: str | None = None) -> str:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
+    if printer_id_normalizado == "default":
+        return CLAVE_HEARTBEAT_WORKER
+    return f"{CLAVE_HEARTBEAT_WORKER}:{printer_id_normalizado}"
 
 
 def obtener_configuracion_tira() -> ConfiguracionTira:
@@ -686,7 +720,10 @@ def _posicion_inicial_worker(control: ConfiguracionControlWorker) -> int:
     return control.fixed_position if control.position_mode == "fixed" else 1
 
 
-def registrar_heartbeat_worker(pid: int | None = None) -> None:
+def registrar_heartbeat_worker(
+    pid: int | None = None,
+    printer_id: str | None = None,
+) -> None:
     heartbeat = {
         "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
         "pid": pid if pid is not None else os.getpid(),
@@ -698,15 +735,15 @@ def registrar_heartbeat_worker(pid: int | None = None) -> None:
                 INSERT INTO settings (key, value) VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
-                (CLAVE_HEARTBEAT_WORKER, json.dumps(heartbeat)),
+                (_clave_heartbeat_worker(printer_id), json.dumps(heartbeat)),
             )
 
 
-def _estado_ejecucion_worker() -> dict[str, object]:
+def _estado_ejecucion_worker(printer_id: str | None = None) -> dict[str, object]:
     with closing(conectar_db()) as conexion:
         fila = conexion.execute(
             "SELECT value FROM settings WHERE key = ?",
-            (CLAVE_HEARTBEAT_WORKER,),
+            (_clave_heartbeat_worker(printer_id),),
         ).fetchone()
     if fila is None:
         return {"worker_online": False, "last_heartbeat": None, "worker_pid": None}
@@ -728,8 +765,9 @@ def _estado_ejecucion_worker() -> dict[str, object]:
 def _respuesta_control_worker(
     control: ConfiguracionControlWorker,
     next_position: int,
+    printer_id: str | None = None,
 ) -> dict[str, object]:
-    ejecucion = _estado_ejecucion_worker()
+    ejecucion = _estado_ejecucion_worker(printer_id)
     if not ejecucion["worker_online"]:
         estado = "offline"
     elif control.enabled:
@@ -747,11 +785,19 @@ def _respuesta_control_worker(
 def _reiniciar_tira_worker(
     conexion: sqlite3.Connection,
     control: ConfiguracionControlWorker,
+    printer_id: str | None = None,
 ) -> str:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     conexion.execute(
-        "UPDATE print_strips SET status = 'abandoned' WHERE status = 'active'"
+        "UPDATE print_strips SET status = 'abandoned' "
+        "WHERE printer_id = ? AND status = 'active'",
+        (printer_id_normalizado,),
     )
-    return _crear_tira(conexion, _posicion_inicial_worker(control))
+    return _crear_tira(
+        conexion,
+        _posicion_inicial_worker(control),
+        printer_id_normalizado,
+    )
 
 
 def guardar_control_worker(
@@ -773,14 +819,31 @@ def guardar_control_worker(
                 or anterior.fixed_position != control.fixed_position
             )
             if cambio_posicion:
-                _reiniciar_tira_worker(conexion, control)
+                impresoras_activas = conexion.execute(
+                    "SELECT DISTINCT printer_id FROM print_strips "
+                    "WHERE status = 'active'"
+                ).fetchall()
+                for tira_activa in impresoras_activas:
+                    _reiniciar_tira_worker(
+                        conexion,
+                        control,
+                        tira_activa["printer_id"],
+                    )
+                if not impresoras_activas:
+                    _reiniciar_tira_worker(conexion, control)
                 next_position = _posicion_inicial_worker(control)
             else:
                 tira = conexion.execute(
-                    "SELECT next_position FROM print_strips WHERE status = 'active' LIMIT 1"
+                    "SELECT next_position FROM print_strips "
+                    "WHERE printer_id = ? AND status = 'active' LIMIT 1",
+                    ("default",),
                 ).fetchone()
                 if tira is None:
-                    _crear_tira(conexion, _posicion_inicial_worker(control))
+                    _crear_tira(
+                        conexion,
+                        _posicion_inicial_worker(control),
+                        "default",
+                    )
                     next_position = _posicion_inicial_worker(control)
                 else:
                     next_position = int(tira["next_position"])
@@ -791,23 +854,37 @@ def guardar_control_worker(
     return _respuesta_control_worker(control, next_position)
 
 
-def reiniciar_posicion_worker() -> dict[str, object]:
+def reiniciar_posicion_worker(
+    printer_id: str | None = "default",
+) -> dict[str, object]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
             control = _leer_control_worker(conexion)
-            _reiniciar_tira_worker(conexion, control)
+            _reiniciar_tira_worker(conexion, control, printer_id_normalizado)
             conexion.commit()
         except Exception:
             conexion.rollback()
             raise
-    return _respuesta_control_worker(control, _posicion_inicial_worker(control))
+    return _respuesta_control_worker(
+        control,
+        _posicion_inicial_worker(control),
+        printer_id_normalizado,
+    )
 
 
-def obtener_estado_control_worker() -> dict[str, object]:
+def obtener_estado_control_worker(
+    printer_id: str | None = "default",
+) -> dict[str, object]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     control = obtener_control_worker()
-    estado = obtener_estado_posiciones()
-    return _respuesta_control_worker(control, int(estado["next_position"]))
+    estado = obtener_estado_posiciones(printer_id_normalizado)
+    return _respuesta_control_worker(
+        control,
+        int(estado["next_position"]),
+        printer_id_normalizado,
+    )
 
 
 def guardar_formulario(data: Formulario) -> tuple[str, str]:
@@ -882,15 +959,18 @@ POSICION_IMPRESION = 3
 def _crear_tira(
     conexion: sqlite3.Connection,
     next_position: int = POSICION_IMPRESION,
+    printer_id: str | None = None,
 ) -> str:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     strip_id = str(uuid4())
     creado = datetime.now().astimezone().isoformat(timespec="seconds")
     conexion.execute(
         """
-        INSERT INTO print_strips (id, next_position, status, created_at)
-        VALUES (?, ?, 'active', ?)
+        INSERT INTO print_strips
+            (id, printer_id, next_position, status, created_at)
+        VALUES (?, ?, ?, 'active', ?)
         """,
-        (strip_id, next_position, creado),
+        (strip_id, printer_id_normalizado, next_position, creado),
     )
     return strip_id
 
@@ -898,10 +978,12 @@ def _crear_tira(
 def _estado_tira(
     conexion: sqlite3.Connection,
     strip_id: str,
+    printer_id: str | None = None,
 ) -> dict[str, object]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     tira = conexion.execute(
-        "SELECT next_position FROM print_strips WHERE id = ?",
-        (strip_id,),
+        "SELECT next_position FROM print_strips WHERE id = ? AND printer_id = ?",
+        (strip_id, printer_id_normalizado),
     ).fetchone()
     trabajos = conexion.execute(
         """
@@ -934,16 +1016,18 @@ def _estado_tira(
     }
 
 
-def obtener_estado_posiciones() -> dict[str, object]:
+def obtener_estado_posiciones(printer_id: str | None = None) -> dict[str, object]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
             tira = conexion.execute(
                 """
                 SELECT id FROM print_strips
-                WHERE status = 'active'
+                WHERE printer_id = ? AND status = 'active'
                 ORDER BY created_at DESC LIMIT 1
-                """
+                """,
+                (printer_id_normalizado,),
             ).fetchone()
             if tira:
                 strip_id = tira["id"]
@@ -951,9 +1035,10 @@ def obtener_estado_posiciones() -> dict[str, object]:
                 ultima = conexion.execute(
                     """
                     SELECT id FROM print_strips
-                    WHERE status = 'completed'
+                    WHERE printer_id = ? AND status = 'completed'
                     ORDER BY completed_at DESC LIMIT 1
-                    """
+                    """,
+                    (printer_id_normalizado,),
                 ).fetchone()
                 if ultima:
                     strip_id = ultima["id"]
@@ -962,8 +1047,9 @@ def obtener_estado_posiciones() -> dict[str, object]:
                     strip_id = _crear_tira(
                         conexion,
                         _posicion_inicial_worker(control),
+                        printer_id_normalizado,
                     )
-            estado = _estado_tira(conexion, strip_id)
+            estado = _estado_tira(conexion, strip_id, printer_id_normalizado)
             conexion.commit()
             return estado
         except Exception:
@@ -973,7 +1059,9 @@ def obtener_estado_posiciones() -> dict[str, object]:
 
 def ajustar_estado_posiciones(
     ajuste: AjusteEstadoPosiciones,
+    printer_id: str | None = None,
 ) -> dict[str, object]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
@@ -984,7 +1072,9 @@ def ajustar_estado_posiciones(
                 else ajuste.next_position
             )
             tira = conexion.execute(
-                "SELECT id FROM print_strips WHERE status = 'active' LIMIT 1"
+                "SELECT id FROM print_strips "
+                "WHERE printer_id = ? AND status = 'active' LIMIT 1",
+                (printer_id_normalizado,),
             ).fetchone()
             if ajuste.start_new_strip and tira:
                 conexion.execute(
@@ -994,14 +1084,14 @@ def ajustar_estado_posiciones(
                 tira = None
 
             if tira is None:
-                strip_id = _crear_tira(conexion, siguiente)
+                strip_id = _crear_tira(conexion, siguiente, printer_id_normalizado)
             else:
                 strip_id = tira["id"]
                 conexion.execute(
                     "UPDATE print_strips SET next_position = ? WHERE id = ?",
                     (siguiente, strip_id),
                 )
-            estado = _estado_tira(conexion, strip_id)
+            estado = _estado_tira(conexion, strip_id, printer_id_normalizado)
             conexion.commit()
             return estado
         except Exception:
@@ -1009,17 +1099,23 @@ def ajustar_estado_posiciones(
             raise
 
 
-def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
+def reservar_posicion(
+    form_id: str,
+    printer_id: str | None = None,
+) -> tuple[str, str, int, int, bool]:
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
             control = _leer_control_worker(conexion)
             tira = conexion.execute(
-                "SELECT id, next_position FROM print_strips WHERE status = 'active' LIMIT 1"
+                "SELECT id, next_position FROM print_strips "
+                "WHERE printer_id = ? AND status = 'active' LIMIT 1",
+                (printer_id_normalizado,),
             ).fetchone()
             if tira is None:
                 position = _posicion_inicial_worker(control)
-                strip_id = _crear_tira(conexion, position)
+                strip_id = _crear_tira(conexion, position, printer_id_normalizado)
             else:
                 strip_id = tira["id"]
                 position = int(tira["next_position"])
@@ -1078,21 +1174,26 @@ def actualizar_trabajo_impresion(
             )
 
 
-def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
+def fallar_trabajo_y_devolver_posicion(
+    job_id: str,
+    error: str,
+    printer_id: str | None = None,
+) -> bool:
     """Marca el trabajo fallido y recupera su posicion cuando sigue siendo la ultima."""
 
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
             trabajo = conexion.execute(
                 """
                 SELECT trabajo.rowid, trabajo.strip_id, trabajo.position,
-                       tira.status AS strip_status, tira.next_position
+                       tira.printer_id, tira.status AS strip_status, tira.next_position
                 FROM print_jobs AS trabajo
                 JOIN print_strips AS tira ON tira.id = trabajo.strip_id
-                WHERE trabajo.id = ?
+                WHERE trabajo.id = ? AND tira.printer_id = ?
                 """,
-                (job_id,),
+                (job_id, printer_id_normalizado),
             ).fetchone()
             if trabajo is None:
                 conexion.commit()
@@ -1120,10 +1221,10 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                 otra_tira_activa = conexion.execute(
                     """
                     SELECT 1 FROM print_strips
-                    WHERE status = 'active' AND id <> ?
+                    WHERE printer_id = ? AND status = 'active' AND id <> ?
                     LIMIT 1
                     """,
-                    (trabajo["strip_id"],),
+                    (trabajo["printer_id"], trabajo["strip_id"]),
                 ).fetchone()
                 if otra_tira_activa:
                     conexion.commit()
@@ -1413,17 +1514,128 @@ def imagen_a_png(imagen: Image.Image) -> bytes:
     return contenido.getvalue()
 
 
-_BLOQUEO_HILO_IMPRESORA = threading.Lock()
+_BLOQUEOS_HILO_IMPRESORA: dict[str, threading.Lock] = {}
+_BLOQUEOS_HILO_GUARDIA = threading.Lock()
+_BLOQUEOS_PROPIEDAD_IMPRESORA: dict[str, threading.Lock] = {}
+
+
+def _clave_recurso_impresora(recurso_fisico: str | None) -> str:
+    return (recurso_fisico or "default-printer").strip().casefold() or "default-printer"
+
+
+def ruta_bloqueo_impresora(recurso_fisico: str | None = None) -> Path:
+    """Obtiene una ruta estable y segura para el lock de un recurso fisico."""
+
+    clave = _clave_recurso_impresora(recurso_fisico)
+    digest = hashlib.sha256(clave.encode("utf-8")).hexdigest()
+    return DIRECTORIO_DATOS / f"printer-{digest}.lock"
+
+
+def ruta_propiedad_impresora(recurso_fisico: str | None = None) -> Path:
+    """Obtiene el lock de ownership de larga vida para un worker."""
+
+    clave = _clave_recurso_impresora(recurso_fisico)
+    digest = hashlib.sha256(clave.encode("utf-8")).hexdigest()
+    return DIRECTORIO_DATOS / f"printer-owner-{digest}.lock"
+
+
+def _bloqueo_hilo_impresora(recurso_fisico: str | None) -> threading.Lock:
+    clave = _clave_recurso_impresora(recurso_fisico)
+    with _BLOQUEOS_HILO_GUARDIA:
+        return _BLOQUEOS_HILO_IMPRESORA.setdefault(clave, threading.Lock())
+
+
+def _bloqueo_propiedad_impresora(recurso_fisico: str | None) -> threading.Lock:
+    clave = _clave_recurso_impresora(recurso_fisico)
+    with _BLOQUEOS_HILO_GUARDIA:
+        return _BLOQUEOS_PROPIEDAD_IMPRESORA.setdefault(clave, threading.Lock())
 
 
 @contextmanager
-def bloquear_impresora(timeout_segundos: float = 120):
-    """Serializa impresiones del API y del worker, incluso en procesos distintos."""
+def poseer_impresora(
+    recurso_fisico: str | None,
+    descripcion_recurso: str = "este recurso fisico",
+):
+    """Reserva un recurso fisico para un unico proceso worker durante su vida."""
 
     DIRECTORIO_DATOS.mkdir(exist_ok=True)
-    ruta_bloqueo = DIRECTORIO_DATOS / "printer.lock"
+    bloqueo_hilo = _bloqueo_propiedad_impresora(recurso_fisico)
+    if not bloqueo_hilo.acquire(blocking=False):
+        raise RuntimeError(
+            f"Ya existe un worker de impresion para {descripcion_recurso}"
+        )
+    archivo = None
+    try:
+        ruta_propiedad = ruta_propiedad_impresora(recurso_fisico)
+        archivo = ruta_propiedad.open("a+b")
+        archivo.seek(0, 2)
+        if archivo.tell() == 0:
+            archivo.write(b"0")
+            archivo.flush()
+        archivo.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(archivo.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(archivo.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise RuntimeError(
+                f"Ya existe un worker de impresion para {descripcion_recurso}"
+            ) from error
+        try:
+            yield
+        finally:
+            archivo.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(archivo.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(archivo.fileno(), fcntl.LOCK_UN)
+    finally:
+        try:
+            if archivo is not None:
+                archivo.close()
+        finally:
+            bloqueo_hilo.release()
+
+
+@contextmanager
+def poseer_printer_id(printer_id: str | None = "default"):
+    """Reserva una identidad logica para un unico worker durante su vida."""
+
+    printer_id_normalizado = normalizar_printer_id(printer_id)
+    with poseer_impresora(
+        f"logical:{printer_id_normalizado}",
+        f"printer_id={printer_id_normalizado}",
+    ):
+        yield
+
+
+def nombre_impresora_efectiva(printer_name: str | None = None) -> str:
+    return printer_name or win32print.GetDefaultPrinter()
+
+
+@contextmanager
+def bloquear_impresora(
+    recurso_fisico: str | None = None,
+    timeout_segundos: float = 120,
+):
+    """Serializa por impresora fisica, incluso entre procesos distintos."""
+
+    DIRECTORIO_DATOS.mkdir(exist_ok=True)
+    ruta_bloqueo = ruta_bloqueo_impresora(recurso_fisico)
     inicio = time.monotonic()
-    with _BLOQUEO_HILO_IMPRESORA:
+    bloqueo_hilo = _bloqueo_hilo_impresora(recurso_fisico)
+    if not bloqueo_hilo.acquire(timeout=timeout_segundos):
+        raise TimeoutError("La impresora sigue ocupada por otro trabajo")
+    try:
         with ruta_bloqueo.open("a+b") as archivo:
             archivo.seek(0, 2)
             if archivo.tell() == 0:
@@ -1464,6 +1676,8 @@ def bloquear_impresora(timeout_segundos: float = 120):
                         import fcntl
 
                         fcntl.flock(archivo.fileno(), fcntl.LOCK_UN)
+    finally:
+        bloqueo_hilo.release()
 
 
 def _imprimir_windows_sin_bloqueo(
@@ -1533,10 +1747,11 @@ def imprimir_windows(
     papel_ancho_mm: float = PAPEL_ANCHO_MM,
     papel_alto_mm: float = PAPEL_ALTO_MM,
 ) -> str:
-    with bloquear_impresora():
+    nombre_impresora = nombre_impresora_efectiva(printer_name)
+    with bloquear_impresora(nombre_impresora):
         return _imprimir_windows_sin_bloqueo(
             imagen,
-            printer_name,
+            nombre_impresora,
             papel_ancho_mm,
             papel_alto_mm,
         )
@@ -2016,8 +2231,8 @@ def ajustar_configuracion_tira(
     response_model=EstadoControlWorker,
     operation_id="consultar_control_worker",
 )
-def consultar_control_worker() -> dict[str, object]:
-    return obtener_estado_control_worker()
+def consultar_control_worker(printer_id: str = "default") -> dict[str, object]:
+    return obtener_estado_control_worker(printer_id)
 
 
 @app.put(
@@ -2049,8 +2264,8 @@ def configurar_control_worker(
     response_model=EstadoControlWorker,
     operation_id="reiniciar_posicion_automatica_worker",
 )
-def resetear_posicion_worker() -> dict[str, object]:
-    return reiniciar_posicion_worker()
+def resetear_posicion_worker(printer_id: str = "default") -> dict[str, object]:
+    return reiniciar_posicion_worker(printer_id)
 
 
 @app.get(
@@ -2064,8 +2279,8 @@ def resetear_posicion_worker() -> dict[str, object]:
     response_model=EstadoPosiciones,
     operation_id="consultar_estado_posiciones",
 )
-def consultar_estado_posiciones() -> dict[str, object]:
-    return obtener_estado_posiciones()
+def consultar_estado_posiciones(printer_id: str = "default") -> dict[str, object]:
+    return obtener_estado_posiciones(printer_id)
 
 
 @app.put(
@@ -2082,8 +2297,9 @@ def consultar_estado_posiciones() -> dict[str, object]:
 )
 def configurar_estado_posiciones(
     ajuste: AjusteEstadoPosiciones,
+    printer_id: str = "default",
 ) -> dict[str, object]:
-    return ajustar_estado_posiciones(ajuste)
+    return ajustar_estado_posiciones(ajuste, printer_id)
 
 
 @app.post(
@@ -2206,13 +2422,18 @@ def procesar_impresion(
     transport: Literal["windows", "bluetooth"] = "windows",
     bluetooth_port: str | None = None,
     bluetooth_baudrate: int = DEFAULT_BAUDRATE,
+    printer_id: str | None = None,
 ) -> dict[str, bool | int | str | None]:
     """Punto de entrada compartido por HTTP y el worker de PostgreSQL."""
 
+    printer_id_normalizado = normalizar_printer_id(printer_id)
     job_id: str | None = None
     try:
         form_id, _ = guardar_formulario(data)
-        job_id, strip_id, position, siguiente, completa = reservar_posicion(form_id)
+        job_id, strip_id, position, siguiente, completa = reservar_posicion(
+            form_id,
+            printer_id_normalizado,
+        )
         if transport == "windows":
             configuracion = obtener_configuracion_tira()
             imagen = generar_imagen_tira(
@@ -2244,7 +2465,7 @@ def procesar_impresion(
             )
             actualizar_trabajo_impresion(job_id, "sent")
         else:
-            with bloquear_impresora():
+            with bloquear_impresora(f"bluetooth:{bluetooth_port}"):
                 impresora = enviar_bluetooth(
                     imagen,
                     bluetooth_port,
@@ -2269,11 +2490,19 @@ def procesar_impresion(
         }
     except ValueError as error:
         if job_id:
-            fallar_trabajo_y_devolver_posicion(job_id, str(error))
+            fallar_trabajo_y_devolver_posicion(
+                job_id,
+                str(error),
+                printer_id_normalizado,
+            )
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         if job_id:
-            fallar_trabajo_y_devolver_posicion(job_id, str(error))
+            fallar_trabajo_y_devolver_posicion(
+                job_id,
+                str(error),
+                printer_id_normalizado,
+            )
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo imprimir: {error}",

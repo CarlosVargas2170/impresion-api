@@ -63,6 +63,94 @@ class ConfiguracionWorkerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "true o false"):
                 worker.cargar_booleano("PRINT_SIMULATE")
 
+    def test_printer_id_usa_default_sin_configuracion(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(worker.cargar_printer_id({}), "default")
+            self.assertEqual(
+                worker.cargar_printer_id({"printer_id": "printer_a"}),
+                "printer_a",
+            )
+
+    def test_printer_id_de_entorno_tiene_prioridad(self):
+        with patch.dict(
+            os.environ,
+            {"PRINT_PRINTER_ID": "printer_b"},
+            clear=True,
+        ):
+            self.assertEqual(
+                worker.cargar_printer_id({"printer_id": "printer_a"}),
+                "printer_b",
+            )
+
+    def test_recurso_fisico_usa_nombre_efectivo_o_puerto_com(self):
+        with patch(
+            "print_worker.nombre_impresora_efectiva",
+            return_value="EPSON predeterminada",
+        ):
+            self.assertEqual(
+                worker.recurso_fisico_worker("windows", None, None),
+                "EPSON predeterminada",
+            )
+        self.assertEqual(
+            worker.recurso_fisico_worker("bluetooth", None, "COM7"),
+            "bluetooth:COM7",
+        )
+
+    def test_worker_falla_antes_de_reclamar_si_recurso_ya_tiene_owner(self):
+        configuracion = {
+            "record_order": "newest",
+            "poll_seconds": 1,
+            "simulate": True,
+            "transport": "windows",
+            "printer_name": "EPSON A",
+            "print_all": True,
+            "max_records": 1,
+        }
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("print_worker.cargar_configuracion_worker", return_value=configuracion),
+            patch("print_worker.cargar_url_postgres", return_value="postgresql://test"),
+            patch("print_worker.ColaImpresionPostgres") as cola_clase,
+            patch(
+                "print_worker.poseer_impresora",
+                side_effect=RuntimeError("Ya existe un worker"),
+            ) as poseer,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Ya existe un worker"):
+                worker.ejecutar_worker()
+
+        poseer.assert_called_once_with("EPSON A")
+        cola_clase.return_value.reclamar_siguiente.assert_not_called()
+
+    def test_worker_falla_antes_de_reclamar_si_printer_id_ya_tiene_owner(self):
+        configuracion = {
+            "record_order": "newest",
+            "poll_seconds": 1,
+            "simulate": True,
+            "transport": "windows",
+            "printer_name": "EPSON B",
+            "printer_id": "printer_b",
+            "print_all": True,
+            "max_records": 1,
+        }
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("print_worker.cargar_configuracion_worker", return_value=configuracion),
+            patch("print_worker.cargar_url_postgres", return_value="postgresql://test"),
+            patch("print_worker.ColaImpresionPostgres") as cola_clase,
+            patch(
+                "print_worker.poseer_printer_id",
+                side_effect=RuntimeError("printer_id=printer_b ocupado"),
+            ) as poseer,
+            patch("print_worker.poseer_impresora") as poseer_fisica,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "printer_id=printer_b"):
+                worker.ejecutar_worker()
+
+        poseer.assert_called_once_with("printer_b")
+        poseer_fisica.assert_not_called()
+        cola_clase.return_value.reclamar_siguiente.assert_not_called()
+
 
 class ProcesamientoWorkerTests(unittest.TestCase):
     def test_mapea_persona_al_formulario_actual(self):
@@ -113,6 +201,23 @@ class ProcesamientoWorkerTests(unittest.TestCase):
         self.assertEqual(cola.fallidas, [])
         imprimir.assert_called_once()
         self.assertFalse(imprimir.call_args.kwargs["simulate"])
+        self.assertEqual(imprimir.call_args.kwargs["printer_id"], "default")
+
+    @patch("print_worker.procesar_impresion")
+    def test_procesar_persona_propaga_printer_id_explicito(self, imprimir):
+        imprimir.return_value = {"strip_id": "tira-b", "position": 1}
+
+        self.assertTrue(
+            worker.procesar_persona(
+                ColaFalsa(),
+                persona_valida(),
+                simulate=True,
+                printer_name="EPSON B",
+                printer_id="printer_b",
+            )
+        )
+
+        self.assertEqual(imprimir.call_args.kwargs["printer_id"], "printer_b")
 
     @patch("print_worker.procesar_impresion", side_effect=RuntimeError("sin papel"))
     def test_error_de_impresion_no_detiene_la_cola(self, _imprimir):
