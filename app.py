@@ -482,6 +482,7 @@ class ImpresionManualPersona(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     simulate: bool = True
+    position: int = Field(default=2, ge=1, le=3)
     printer_name: str | None = Field(default=None, max_length=255)
 
     @field_validator("printer_name", mode="before")
@@ -1242,6 +1243,27 @@ def vista_previa() -> FileResponse:
     return FileResponse(DIRECTORIO_BASE / "static" / "preview.html")
 
 
+@app.get(
+    "/manual-print",
+    tags=["Vistas web"],
+    summary="Abrir la consola de impresion manual",
+    description=(
+        "Devuelve una vista dedicada para buscar personas, elegir una posicion de "
+        "la tira e imprimir sin mostrar el formulario de registro."
+    ),
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Pagina HTML de impresion manual.",
+            "content": {"text/html": {"schema": {"type": "string"}}},
+        }
+    },
+    operation_id="abrir_impresion_manual",
+)
+def vista_impresion_manual() -> FileResponse:
+    return FileResponse(DIRECTORIO_BASE / "static" / "manual-print.html")
+
+
 @app.post(
     "/preview",
     tags=["Impresion"],
@@ -1523,7 +1545,8 @@ def buscar_personas_para_impresion(
     summary="Imprimir manualmente una persona",
     description=(
         "Reserva de forma atomica una persona pendiente o ya impresa, genera su "
-        "gafete en la siguiente posicion de la tira y actualiza su estado en PostgreSQL."
+        "gafete en la posicion 1, 2 o 3 elegida y actualiza su estado en PostgreSQL. "
+        "No modifica la posicion fija del worker automatico."
     ),
     response_model=ImpresionAutomaticaEnviada,
     responses={
@@ -1561,7 +1584,11 @@ def imprimir_persona_manualmente(
     formulario = formulario_desde_persona(persona, solicitud.printer_name)
     claimed_person_id = persona["id"]
     try:
-        resultado = procesar_impresion(formulario, simulate=solicitud.simulate)
+        resultado = procesar_impresion_manual(
+            formulario,
+            solicitud.position,
+            simulate=solicitud.simulate,
+        )
     except Exception as error:
         try:
             cola.marcar_fallida(claimed_person_id, descripcion_error(error))
@@ -1682,7 +1709,7 @@ def configurar_estado_posiciones(
     summary="Imprimir un formulario en una posicion de la tira",
     description=(
         "Genera una pagina completa para media hoja Carta y coloca el formulario "
-        "guardado exclusivamente en la posicion 2. Los desplazamientos permiten corregir "
+        "guardado en la posicion manual elegida. Los desplazamientos permiten corregir "
         "variaciones de alimentacion para una impresion concreta."
     ),
     response_model=ImpresionPosicionEnviada,
@@ -1720,7 +1747,7 @@ def imprimir_formulario_en_posicion(
         imagen = generar_imagen_tira(
             data,
             form_id,
-            POSICION_IMPRESION,
+            ajuste.position,
             configuracion,
             ajuste.offset_x_mm,
             ajuste.offset_y_mm,
@@ -1733,10 +1760,10 @@ def imprimir_formulario_en_posicion(
         )
         return {
             "ok": True,
-            "message": f"Impresion enviada a la posicion {POSICION_IMPRESION}",
+            "message": f"Impresion enviada a la posicion {ajuste.position}",
             "printer": impresora,
             "id": form_id,
-            "position": POSICION_IMPRESION,
+            "position": ajuste.position,
             "offset_x_mm": ajuste.offset_x_mm,
             "offset_y_mm": ajuste.offset_y_mm,
         }
@@ -1866,6 +1893,50 @@ def procesar_impresion(
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo imprimir: {error}",
+        ) from error
+
+
+def procesar_impresion_manual(
+    data: Formulario,
+    position: int,
+    simulate: bool = True,
+) -> dict[str, bool | int | str | None]:
+    """Imprime una posicion elegida sin alterar la secuencia fija del worker."""
+
+    try:
+        form_id, _ = guardar_formulario(data)
+        configuracion = obtener_configuracion_tira()
+        imagen = generar_imagen_tira(data, form_id, position, configuracion)
+        impresora = None
+        if not simulate:
+            impresora = imprimir_windows(
+                imagen,
+                data.printer_name,
+                configuracion.paper_width_mm,
+                configuracion.paper_height_mm,
+            )
+        return {
+            "ok": True,
+            "message": (
+                f"Simulacion manual asignada a la posicion {position}"
+                if simulate
+                else f"Impresion manual enviada a la posicion {position}"
+            ),
+            "simulated": simulate,
+            "printer": impresora,
+            "id": form_id,
+            "strip_id": "manual",
+            "position": position,
+            "next_position": POSICION_IMPRESION,
+            "strip_completed": False,
+            "view_url": url_formulario(form_id),
+        }
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo imprimir manualmente: {error}",
         ) from error
 
 

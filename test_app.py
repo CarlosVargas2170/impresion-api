@@ -379,13 +379,13 @@ class ImpresionTiraTests(unittest.TestCase):
                 )
 
         self.assertTrue(respuesta["ok"])
-        self.assertEqual(respuesta["position"], 2)
+        self.assertEqual(respuesta["position"], 1)
         argumentos = imprimir.call_args.args
         self.assertEqual(argumentos[1], "EPSON L3310 Series")
         self.assertEqual(argumentos[2:], (107.95, 279.4))
 
     @patch("app.imprimir_windows")
-    def test_post_print_solo_asigna_posicion_2_y_abre_otra_tira(self, imprimir):
+    def test_post_print_solo_asigna_posicion_configurada_y_abre_otra_tira(self, imprimir):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -398,7 +398,10 @@ class ImpresionTiraTests(unittest.TestCase):
                     for _ in range(4)
                 ]
 
-        self.assertEqual([item["position"] for item in respuestas], [2, 2, 2, 2])
+        self.assertEqual(
+            [item["position"] for item in respuestas],
+            [api.POSICION_IMPRESION] * 4,
+        )
         self.assertEqual(len({item["strip_id"] for item in respuestas}), 4)
         self.assertTrue(all(item["strip_completed"] for item in respuestas))
         self.assertTrue(all(item["simulated"] for item in respuestas))
@@ -419,12 +422,12 @@ class ImpresionTiraTests(unittest.TestCase):
                 estado_fallido = api.obtener_estado_posiciones()
                 reintento = api.procesar_impresion(self.formulario(), simulate=True)
 
-        self.assertEqual(estado_fallido["next_position"], 2)
+        self.assertEqual(estado_fallido["next_position"], api.POSICION_IMPRESION)
         self.assertEqual(estado_fallido["positions"][0]["status"], "failed")
-        self.assertEqual(reintento["position"], 2)
+        self.assertEqual(reintento["position"], api.POSICION_IMPRESION)
         self.assertEqual(reintento["strip_id"], estado_fallido["strip_id"])
 
-    def test_fallo_en_posicion_2_reabre_la_tira_fallida(self):
+    def test_fallo_en_posicion_configurada_reabre_la_tira_fallida(self):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -441,11 +444,13 @@ class ImpresionTiraTests(unittest.TestCase):
                 estado = api.obtener_estado_posiciones()
 
         self.assertNotEqual(estado["strip_id"], primera["strip_id"])
-        self.assertEqual(estado["next_position"], 2)
-        self.assertEqual(estado["positions"][0]["position"], 2)
+        self.assertEqual(estado["next_position"], api.POSICION_IMPRESION)
+        self.assertEqual(
+            estado["positions"][0]["position"], api.POSICION_IMPRESION
+        )
         self.assertEqual(estado["positions"][0]["status"], "failed")
 
-    def test_solicitudes_simultaneas_usan_posicion_2_en_tiras_separadas(self):
+    def test_solicitudes_simultaneas_usan_posicion_configurada_en_tiras_separadas(self):
         with tempfile.TemporaryDirectory() as temporal:
             directorio = Path(temporal)
             with (
@@ -468,7 +473,10 @@ class ImpresionTiraTests(unittest.TestCase):
             )
         self.assertEqual(len(posiciones_por_tira), 6)
         self.assertTrue(
-            all(posiciones == {2} for posiciones in posiciones_por_tira.values())
+            all(
+                posiciones == {api.POSICION_IMPRESION}
+                for posiciones in posiciones_por_tira.values()
+            )
         )
 
     def test_endpoint_permite_corregir_siguiente_posicion(self):
@@ -490,9 +498,9 @@ class ImpresionTiraTests(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(inicial["next_position"], 2)
-        self.assertEqual(corregido["next_position"], 2)
-        self.assertEqual(nueva["next_position"], 2)
+        self.assertEqual(inicial["next_position"], api.POSICION_IMPRESION)
+        self.assertEqual(corregido["next_position"], api.POSICION_IMPRESION)
+        self.assertEqual(nueva["next_position"], api.POSICION_IMPRESION)
         self.assertNotEqual(corregido["strip_id"], nueva["strip_id"])
 
 
@@ -554,7 +562,7 @@ class PersonasParaImpresionTests(unittest.TestCase):
         self.assertEqual(resultado["people"][0]["id"], "persona-1")
         cola.buscar_personas.assert_called_once_with("Ana", "printed", 10)
 
-    @patch("app.procesar_impresion")
+    @patch("app.procesar_impresion_manual")
     @patch("print_worker.cargar_url_postgres", return_value="postgresql://test/db")
     @patch("print_worker.ColaImpresionPostgres")
     def test_impresion_manual_reserva_e_imprime_persona(
@@ -570,12 +578,12 @@ class PersonasParaImpresionTests(unittest.TestCase):
         }
         procesar.return_value = {
             "ok": True,
-            "message": "Simulacion asignada a la posicion 1",
+            "message": "Simulacion manual asignada a la posicion 3",
             "simulated": True,
             "printer": None,
             "id": "form-1",
             "strip_id": "strip-1",
-            "position": 1,
+            "position": 3,
             "next_position": 2,
             "strip_completed": False,
             "view_url": "http://example.test/forms/form-1",
@@ -583,12 +591,13 @@ class PersonasParaImpresionTests(unittest.TestCase):
 
         resultado = api.imprimir_persona_manualmente(
             "persona-1",
-            api.ImpresionManualPersona(simulate=True),
+            api.ImpresionManualPersona(simulate=True, position=3),
         )
 
-        self.assertEqual(resultado["position"], 1)
+        self.assertEqual(resultado["position"], 3)
         cola.reclamar_persona.assert_called_once_with("persona-1")
         cola.marcar_impresa.assert_called_once_with("persona-1")
+        self.assertEqual(procesar.call_args.args[1], 3)
         self.assertTrue(procesar.call_args.kwargs["simulate"])
 
 
@@ -607,6 +616,7 @@ class DocumentacionOpenAPITests(unittest.TestCase):
             {
                 ("GET", "/"),
                 ("GET", "/preview"),
+                ("GET", "/manual-print"),
                 ("POST", "/preview"),
                 ("POST", "/forms"),
                 ("GET", "/api/forms/{form_id}"),

@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Impresión manual | Nexus</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #17201f;
+      background: #eef1ef;
+    }
+    * { box-sizing: border-box; }
+    body { min-width: 320px; min-height: 100vh; margin: 0; }
+    button, input, select { font: inherit; }
+    .topbar {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 32px;
+      color: #fff;
+      background: #17201f;
+      border-bottom: 4px solid #e8bf45;
+    }
+    .brand { font-size: 19px; font-weight: 800; }
+    .topbar span:last-child { color: #b9c6c3; font-size: 13px; }
+    main {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+      gap: 48px;
+      align-items: start;
+    }
+    h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; }
+    .subtitle { margin: 0 0 24px; color: #596663; font-size: 14px; }
+    .panel {
+      padding: 18px;
+      background: #fff;
+      border: 1px solid #cbd3d0;
+      border-radius: 7px;
+      box-shadow: 0 8px 24px rgb(23 32 31 / 7%);
+    }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: grid; gap: 6px; color: #32403d; font-size: 12px; font-weight: 750; }
+    .full { grid-column: 1 / -1; }
+    input, select {
+      width: 100%;
+      min-height: 43px;
+      padding: 9px 11px;
+      color: #17201f;
+      background: #fff;
+      border: 1px solid #bcc7c4;
+      border-radius: 5px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #087d6b; box-shadow: 0 0 0 3px rgb(8 125 107 / 15%); }
+    .mode {
+      grid-template-columns: 18px 1fr;
+      align-items: center;
+      gap: 9px;
+      padding: 11px;
+      background: #e3f1ed;
+      border: 1px solid #add3c8;
+      border-radius: 5px;
+    }
+    .mode input { width: 18px; min-height: 18px; margin: 0; accent-color: #087d6b; }
+    .search-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 16px; }
+    .tabs { display: flex; gap: 5px; }
+    button {
+      min-height: 40px;
+      padding: 8px 13px;
+      color: #fff;
+      background: #087d6b;
+      border: 0;
+      border-radius: 5px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:hover { background: #066957; }
+    button:disabled { cursor: wait; opacity: .6; }
+    .tabs button { color: #53615e; background: #edf1ef; }
+    .tabs button.active { color: #fff; background: #087d6b; }
+    .results { max-height: 450px; display: grid; gap: 8px; margin-top: 12px; overflow-y: auto; }
+    .person {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 11px;
+      background: #f7f9f8;
+      border: 1px solid #dce4e1;
+      border-radius: 5px;
+    }
+    .person.selected { background: #f0faf7; border-color: #087d6b; }
+    .person-name { display: block; font-size: 13px; font-weight: 800; }
+    .person-meta { display: block; margin-top: 3px; color: #71807c; font-size: 11px; }
+    .person-actions { display: flex; gap: 6px; }
+    .person-actions button { min-height: 34px; padding: 6px 10px; font-size: 11px; }
+    .person-actions .select-person { color: #32403d; background: #dce4e1; }
+    .empty { padding: 24px 8px; color: #71807c; font-size: 12px; text-align: center; }
+    .status { min-height: 20px; margin: 12px 2px 0; color: #53615e; font-size: 12px; }
+    .status.error { color: #b42318; }
+    .status.success { color: #067647; }
+    .preview-area { position: sticky; top: 28px; display: grid; justify-items: center; gap: 12px; }
+    .preview-label { width: 100%; display: flex; justify-content: space-between; color: #596663; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+    .strip {
+      width: min(100%, 270px);
+      aspect-ratio: 107.95 / 279.4;
+      position: relative;
+      background: #fff;
+      border: 1px solid #cbd3d0;
+      box-shadow: 0 18px 42px rgb(23 32 31 / 18%);
+    }
+    .strip-slot {
+      position: absolute;
+      left: 3.68%;
+      width: 92.64%;
+      height: 28.63%;
+      padding: 8px;
+      overflow: hidden;
+      color: #17201f;
+      background: #fafbfa;
+      border: 1px dashed #aeb9b6;
+      border-radius: 3px;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .strip-slot[data-position="1"] { top: 67.48%; --position-offset-x: 3.7%; }
+    .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
+    .strip-slot[data-position="3"] { top: 3.17%; --position-offset-x: 0%; }
+    .strip-slot.active { background: #f4fbf8; border: 2px solid #087d6b; box-shadow: 0 0 0 3px rgb(8 125 107 / 12%); }
+    .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
+    .slot-number { position: absolute; top: 5px; right: 6px; z-index: 2; color: #71807c; font: 700 9px/1 system-ui, sans-serif; text-transform: uppercase; }
+    .badge-preview {
+      position: absolute;
+      top: calc(50% - 2px);
+      left: calc(50% + var(--position-offset-x, 0%));
+      width: 68%;
+      height: 112%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      transform-origin: center;
+    }
+    .badge-content { min-width: 0; width: 100%; text-align: center; }
+    .badge-empty { color: #9ba6a3; font: 700 11px/1.2 system-ui, sans-serif; text-transform: uppercase; transform: rotate(90deg); }
+    .badge-name, .badge-surnames { display: block; font-weight: 800; overflow-wrap: anywhere; }
+    .badge-name { font-size: 12px; line-height: 1; }
+    .badge-surnames { margin-top: 5px; font-size: 14px; line-height: 1; }
+    .badge-company { display: block; margin-top: 10px; font-size: 8px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-job { display: block; margin-top: 4px; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+    .badge-email { display: block; margin-top: 7px; color: #53615e; font-size: 7px; font-weight: 700; overflow-wrap: anywhere; }
+    .badge-qr { width: 28px; height: 28px; margin: 5px auto 0; image-rendering: pixelated; transform: translateX(-8px); }
+    .hint { width: min(100%, 270px); padding: 10px 12px; color: #53615e; background: #e7ecea; border-radius: 5px; font-size: 11px; line-height: 1.4; text-align: center; }
+    @media (max-width: 820px) {
+      .topbar { padding: 0 20px; }
+      main { width: min(100% - 28px, 620px); grid-template-columns: 1fr; gap: 34px; padding-top: 24px; }
+      .preview-area { position: static; }
+    }
+    @media (max-width: 520px) {
+      .controls, .search-row { grid-template-columns: 1fr; }
+      .full { grid-column: auto; }
+      .person { grid-template-columns: 1fr; }
+      .strip { width: min(100%, 250px); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar"><span class="brand">NEXUS</span><span>Consola de impresión manual</span></header>
+  <main>
+    <section>
+      <h1>Impresión manual</h1>
+      <p class="subtitle">Busca una persona, elige la posición y envíala a imprimir.</p>
+      <div class="panel">
+        <div class="controls">
+          <label>Posición en la tira
+            <select id="position"><option value="1">Posición 1 · inferior</option><option value="2" selected>Posición 2 · central</option><option value="3">Posición 3 · superior</option></select>
+          </label>
+          <label>Impresora
+            <select id="printer"><option value="">Impresora predeterminada</option></select>
+          </label>
+          <label class="mode full"><input id="simulation" type="checkbox" checked><span>Modo simulación · no envía a la impresora</span></label>
+        </div>
+        <div class="search-row">
+          <input id="search" type="search" placeholder="Buscar nombre, empresa, correo o teléfono" autocomplete="off" aria-label="Buscar personas">
+          <div class="tabs"><button type="button" class="active" data-status="pending">Por imprimir</button><button type="button" data-status="printed">Impresas</button></div>
+        </div>
+        <div id="results" class="results" aria-live="polite"><div class="empty">Buscando personas...</div></div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    <aside class="preview-area" aria-label="Vista previa de la tira">
+      <div class="preview-label"><span>Tira vertical</span><span id="dimensions">107,95 × 279,4 mm</span></div>
+      <div id="strip" class="strip">
+        <button class="strip-slot" type="button" data-position="3"><span class="slot-number">Posición 3</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
+        <button class="strip-slot active" type="button" data-position="2"><span class="slot-number">Posición 2</span><span class="badge-preview"><span class="badge-empty">Selecciona persona</span></span></button>
+        <button class="strip-slot" type="button" data-position="1"><span class="slot-number">Posición 1</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
+      </div>
+      <div class="hint">Haz clic en un espacio de la tira para cambiar la posición manual.</div>
+    </aside>
+  </main>
+  <script>
+    const search = document.querySelector("#search");
+    const results = document.querySelector("#results");
+    const statusBox = document.querySelector("#status");
+    const position = document.querySelector("#position");
+    const printer = document.querySelector("#printer");
+    const simulation = document.querySelector("#simulation");
+    const strip = document.querySelector("#strip");
+    const dimensions = document.querySelector("#dimensions");
+    const tabs = [...document.querySelectorAll("[data-status]")];
+    const slots = [...document.querySelectorAll(".strip-slot")];
+    let filter = "pending";
+    let people = [];
+    let selected = null;
+    let sending = false;
+    let request = null;
+    let debounce = null;
+    const printedSlots = [null, null, null];
+
+    function escapeHtml(value = "") {
+      return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+    }
+    function errorMessage(data, fallback) {
+      if (typeof data?.detail === "string") return data.detail;
+      if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg).join(". ");
+      return fallback;
+    }
+    function badgeMarkup(data) {
+      if (!data) return '<span class="badge-empty">Disponible</span>';
+      const surnames = [data.paternal_surname, data.maternal_surname].filter(Boolean).join(" ");
+      return `<span class="badge-content"><span class="badge-name">${escapeHtml(data.first_name)}</span><span class="badge-surnames">${escapeHtml(surnames)}</span>${data.company ? `<span class="badge-company">${escapeHtml(data.company)}</span>` : ""}${data.job_title ? `<span class="badge-job">${escapeHtml(data.job_title)}</span>` : ""}${data.email ? `<span class="badge-email">${escapeHtml(data.email)}</span>` : ""}${data.form_id ? `<img class="badge-qr" src="/api/forms/${encodeURIComponent(data.form_id)}/qr" alt="QR">` : ""}</span>`;
+    }
+    function renderStrip() {
+      const chosen = Number(position.value);
+      for (const slot of slots) {
+        const slotPosition = Number(slot.dataset.position);
+        const printed = printedSlots[slotPosition - 1];
+        const data = printed || (slotPosition === chosen ? selected : null);
+        slot.classList.toggle("active", slotPosition === chosen);
+        slot.classList.toggle("printed", Boolean(printed));
+        slot.querySelector(".badge-preview").innerHTML = badgeMarkup(data);
+      }
+    }
+    function renderPeople() {
+      if (!people.length) {
+        results.innerHTML = '<div class="empty">No hay personas que coincidan.</div>';
+        return;
+      }
+      results.innerHTML = people.map(person => {
+        const name = [person.first_name, person.paternal_surname, person.maternal_surname].filter(Boolean).join(" ");
+        const meta = [person.company, person.email, person.phone_number].filter(Boolean).join(" · ");
+        const action = person.print_state === "printed" ? "Reimprimir" : "Imprimir";
+        return `<article class="person${selected?.id === person.id ? " selected" : ""}" data-id="${escapeHtml(person.id)}"><span><span class="person-name">${escapeHtml(name || "Sin nombre")}</span><span class="person-meta">${escapeHtml(meta || "Sin datos adicionales")}</span></span><span class="person-actions"><button type="button" class="select-person">Ver</button><button type="button" class="print-person">${action}</button></span></article>`;
+      }).join("");
+      for (const row of results.querySelectorAll(".person")) {
+        const person = people.find(item => String(item.id) === row.dataset.id);
+        row.querySelector(".select-person").addEventListener("click", () => selectPerson(person));
+        row.querySelector(".print-person").addEventListener("click", () => printPerson(person));
+      }
+    }
+    function selectPerson(person) {
+      selected = person;
+      renderPeople();
+      renderStrip();
+    }
+    async function loadPeople() {
+      if (sending) return;
+      if (request) request.abort();
+      request = new AbortController();
+      const params = new URLSearchParams({ search: search.value.trim(), status: filter, limit: "30" });
+      try {
+        const response = await fetch(`/people?${params}`, { signal: request.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(errorMessage(data, "No se pudieron consultar las personas"));
+        people = data.people;
+        renderPeople();
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        results.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      }
+    }
+    async function printPerson(person) {
+      selectPerson(person);
+      sending = true;
+      results.querySelectorAll("button").forEach(button => { button.disabled = true; });
+      statusBox.className = "status";
+      statusBox.textContent = simulation.checked ? "Generando simulación..." : "Enviando a impresora...";
+      try {
+        const response = await fetch(`/people/${encodeURIComponent(person.id)}/print`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ simulate: simulation.checked, position: Number(position.value), printer_name: printer.value || null })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(errorMessage(data, "No se pudo imprimir"));
+        printedSlots[data.position - 1] = { ...person, form_id: data.id };
+        renderStrip();
+        statusBox.className = "status success";
+        statusBox.textContent = `${data.simulated ? "Simulación" : "Impresión"} completada en la posición ${data.position}.`;
+      } catch (error) {
+        statusBox.className = "status error";
+        statusBox.textContent = error.message;
+      } finally {
+        sending = false;
+        loadPeople();
+      }
+    }
+    async function loadPrinters() {
+      try {
+        const response = await fetch("/printers");
+        if (!response.ok) return;
+        const data = await response.json();
+        printer.options[0].textContent = data.default ? `Predeterminada: ${data.default}` : "Impresora predeterminada";
+        for (const name of data.printers) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          printer.append(option);
+        }
+      } catch (_) { printer.options[0].textContent = "Impresora predeterminada"; }
+    }
+    async function loadLayout() {
+      try {
+        const response = await fetch("/print-layout");
+        if (!response.ok) return;
+        const layout = await response.json();
+        strip.style.aspectRatio = `${layout.paper_width_mm} / ${layout.paper_height_mm}`;
+        dimensions.textContent = `${String(layout.paper_width_mm).replace(".", ",")} × ${String(layout.paper_height_mm).replace(".", ",")} mm`;
+        const gap = (layout.paper_height_mm - layout.badge_height_mm * 3) / 4;
+        for (const slot of slots) {
+          const value = Number(slot.dataset.position);
+          const physical = 4 - value;
+          const x = (layout.paper_width_mm - layout.badge_width_mm) / 2 + layout.global_offset_x_mm;
+          const y = gap * physical + layout.badge_height_mm * (physical - 1) + layout.global_offset_y_mm;
+          slot.style.left = `${x / layout.paper_width_mm * 100}%`;
+          slot.style.top = `${y / layout.paper_height_mm * 100}%`;
+          slot.style.width = `${layout.badge_width_mm / layout.paper_width_mm * 100}%`;
+          slot.style.height = `${layout.badge_height_mm / layout.paper_height_mm * 100}%`;
+        }
+      } catch (_) {}
+    }
+    search.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(loadPeople, 250); });
+    position.addEventListener("change", renderStrip);
+    for (const slot of slots) slot.addEventListener("click", () => { position.value = slot.dataset.position; renderStrip(); });
+    for (const tab of tabs) tab.addEventListener("click", () => { filter = tab.dataset.status; tabs.forEach(item => item.classList.toggle("active", item === tab)); loadPeople(); });
+    loadPrinters();
+    loadLayout();
+    loadPeople();
+    renderStrip();
+    setInterval(loadPeople, 3000);
+  </script>
+</body>
+</html>

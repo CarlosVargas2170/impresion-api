@@ -89,7 +89,7 @@
 
     .people-tools {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto auto;
       gap: 10px;
     }
 
@@ -282,6 +282,7 @@
       box-shadow: 0 0 0 3px rgb(8 125 107 / 12%);
     }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
+
     /* Equivale a +4 mm para la posicion 1 y +2 mm para la posicion 2. */
     .strip-slot[data-position="1"] { top: 67.48%; --position-offset-x: 3.7%; }
     .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
@@ -403,6 +404,11 @@
             <button type="button" class="active" data-people-status="pending">Por imprimir</button>
             <button type="button" data-people-status="printed">Impresas</button>
           </div>
+          <select id="manualPosition" aria-label="Posicion para impresion manual">
+            <option value="1">Manual: posicion 1</option>
+            <option value="2" selected>Manual: posicion 2</option>
+            <option value="3">Manual: posicion 3</option>
+          </select>
         </div>
         <div id="peopleResults" class="people-results" aria-live="polite"></div>
       </section>
@@ -478,9 +484,9 @@
 
     <aside class="preview-area" aria-label="Vista previa del papel">
       <div class="preview-label"><span>Tira vertical</span><span id="sheetDimensions">107,95 × 279,4 mm</span></div>
-      <div class="sheet-summary">3 cuadros · formulario girado en vertical</div>
+      <div class="sheet-summary">Automatico: posicion 3 · Manual: posicion libre</div>
       <div id="strip" class="strip" aria-label="Media hoja Carta con tres posiciones">
-        <button class="strip-slot" type="button" data-position="3" aria-label="Seleccionar posicion 3">
+        <button class="strip-slot" type="button" data-position="3" aria-label="Posicion 3">
           <span class="slot-number">Posicion 3</span>
           <span class="badge-preview"></span>
         </button>
@@ -488,12 +494,12 @@
           <span class="slot-number">Posicion 2</span>
           <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
         </button>
-        <button class="strip-slot active" type="button" data-position="1" aria-label="Seleccionar posicion 1">
+        <button class="strip-slot" type="button" data-position="1" aria-label="Posicion 1">
           <span class="slot-number">Posicion 1</span>
           <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
         </button>
       </div>
-      <div class="simulation-note">Selecciona uno de los tres cuadros. En simulacion se guardara el formulario y se ocupara visualmente esa posicion.</div>
+      <div class="simulation-note">El worker siempre usa la posicion 3. Para impresion manual puedes elegir cualquiera de las tres.</div>
     </aside>
   </main>
 
@@ -510,6 +516,7 @@
     const peopleResults = document.querySelector("#peopleResults");
     const peopleCount = document.querySelector("#peopleCount");
     const peopleTabs = [...document.querySelectorAll("[data-people-status]")];
+    const manualPosition = document.querySelector("#manualPosition");
     const strip = document.querySelector("#strip");
     const sheetDimensions = document.querySelector("#sheetDimensions");
     const slots = [...document.querySelectorAll(".strip-slot")];
@@ -655,6 +662,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             simulate: simulationMode.checked,
+            position: Number(manualPosition.value),
             printer_name: printer.value || null
           })
         });
