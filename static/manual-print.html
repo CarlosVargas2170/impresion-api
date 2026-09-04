@@ -142,9 +142,9 @@
       border-radius: 3px;
       font-family: Arial, Helvetica, sans-serif;
     }
-    .strip-slot[data-position="1"] { top: 67.48%; --position-offset-x: 3.7%; }
+    .strip-slot[data-position="1"] { top: 3.17%; --position-offset-x: 3.7%; }
     .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
-    .strip-slot[data-position="3"] { top: 3.17%; --position-offset-x: 0%; }
+    .strip-slot[data-position="3"] { top: 67.48%; --position-offset-x: 0%; }
     .strip-slot.active { background: #f4fbf8; border: 2px solid #087d6b; box-shadow: 0 0 0 3px rgb(8 125 107 / 12%); }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
     .slot-number { position: absolute; top: 5px; right: 6px; z-index: 2; color: #71807c; font: 700 9px/1 system-ui, sans-serif; text-transform: uppercase; }
@@ -158,10 +158,11 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      transform: translate(-50%, -50%) rotate(-90deg);
+      transform: translate(-50%, -50%) rotate(90deg);
       transform-origin: center;
     }
     .badge-content { min-width: 0; width: 100%; text-align: center; }
+    .badge-preview .badge-empty { transform: rotate(-90deg); }
     .badge-empty { color: #9ba6a3; font: 700 11px/1.2 system-ui, sans-serif; text-transform: uppercase; transform: rotate(90deg); }
     .badge-name, .badge-surnames { display: block; font-weight: 800; overflow-wrap: anywhere; }
     .badge-name { font-size: 12px; line-height: 1; }
@@ -197,7 +198,7 @@
       border: 1px solid #9eaaa7;
       box-shadow: 0 5px 12px rgb(23 32 31 / 12%);
     }
-    .feed-arrow { margin-bottom: 6px; color: #067647; font-size: 10px; font-weight: 900; line-height: 1.2; text-align: center; }
+    .feed-arrow { margin-top: 6px; color: #067647; font-size: 10px; font-weight: 900; line-height: 1.2; text-align: center; }
     .feed-slot {
       height: 58px;
       position: relative;
@@ -214,11 +215,11 @@
     .example-copy {
       position: absolute;
       top: 50%;
-      left: 42%;
+      left: 58%;
       display: grid;
       gap: 2px;
       text-align: center;
-      transform: translate(-50%, -50%) rotate(-90deg);
+      transform: translate(-50%, -50%) rotate(90deg);
     }
     .example-copy strong { font-size: 7px; line-height: 1; white-space: nowrap; }
     .example-copy small { color: #596663; font-size: 5px; white-space: nowrap; }
@@ -226,7 +227,7 @@
       width: 20px;
       height: 20px;
       position: absolute;
-      right: 5px;
+      left: 5px;
       bottom: 6px;
       background:
         linear-gradient(90deg, #17201f 50%, transparent 50%) 0 0 / 5px 5px,
@@ -267,32 +268,32 @@
       <p class="subtitle">Busca una persona, elige la posición y envíala a imprimir.</p>
       <section class="paper-help" aria-labelledby="paperHelpTitle">
         <div class="feed-visual">
-          <div class="feed-arrow">↑ ESTE EXTREMO ENTRA PRIMERO</div>
-          <div class="feed-sheet" aria-label="Ejemplo de carga: la posición 3 entra primero, seguida por la 2 y la 1">
+          <div class="feed-sheet" aria-label="Vista final: posición 1 arriba, posición 2 al centro y posición 3 abajo">
+            <div class="feed-slot">POSICIÓN 1</div>
+            <div class="feed-slot">POSICIÓN 2</div>
             <div class="feed-slot example">
               <span class="feed-slot-label">POS. 3</span>
               <span class="example-copy"><strong>ANA PÉREZ</strong><small>NEXUS</small><small>ana@ejemplo.com</small></span>
               <span class="example-qr" aria-hidden="true"></span>
             </div>
-            <div class="feed-slot">POSICIÓN 2</div>
-            <div class="feed-slot">POSICIÓN 1</div>
           </div>
+          <div class="feed-arrow">↓ POSICIÓN 3 ENTRA PRIMERO</div>
         </div>
         <div class="feed-copy">
-          <h2 id="paperHelpTitle">Orientación para cargar el papel</h2>
-          <p>Usa el texto de ejemplo para reconocer el sentido correcto de la tira antes de imprimir.</p>
+          <h2 id="paperHelpTitle">Orientación de la tira</h2>
+          <p>El dibujo representa la tira como la verás al retirarla: QR a la izquierda y posiciones 1, 2 y 3 de arriba hacia abajo.</p>
           <div class="feed-steps">
-            <span><strong>1.</strong> Coloca la tira vertical.</span>
-            <span><strong>2.</strong> Introduce primero el extremo de la posición 3, como muestra el dibujo.</span>
+            <span><strong>1.</strong> Mantén la tira vertical.</span>
+            <span><strong>2.</strong> Para cargarla, introduce primero el extremo inferior correspondiente a la posición 3.</span>
             <span><strong>3.</strong> Mantén esta misma orientación para las siguientes impresiones.</span>
           </div>
-          <p class="feed-result"><strong>Resultado:</strong> al retirar la tira, gírala 180°. Con el QR a la izquierda, leerás las posiciones 1, 2 y 3 de arriba hacia abajo.</p>
+          <p class="feed-result"><strong>Referencia final:</strong> posición 1 arriba, posición 2 al centro y posición 3 abajo.</p>
         </div>
       </section>
       <div class="panel">
         <div class="controls">
           <label>Posición en la tira
-            <select id="position"><option value="1">Posición 1 · inferior</option><option value="2" selected>Posición 2 · central</option><option value="3">Posición 3 · superior</option></select>
+            <select id="position"><option value="1">Posición 1 · superior</option><option value="2" selected>Posición 2 · central</option><option value="3">Posición 3 · inferior</option></select>
           </label>
           <label>Impresora
             <select id="printer"><option value="">Impresora predeterminada</option></select>
@@ -325,11 +326,11 @@
     <aside class="preview-area" aria-label="Vista previa de la tira">
       <div class="preview-label"><span>Tira vertical</span><span id="dimensions">107,95 × 279,4 mm</span></div>
       <div id="strip" class="strip">
-        <button class="strip-slot" type="button" data-position="3"><span class="slot-number">Posición 3</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
-        <button class="strip-slot active" type="button" data-position="2"><span class="slot-number">Posición 2</span><span class="badge-preview"><span class="badge-empty">Selecciona persona</span></span></button>
         <button class="strip-slot" type="button" data-position="1"><span class="slot-number">Posición 1</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
+        <button class="strip-slot active" type="button" data-position="2"><span class="slot-number">Posición 2</span><span class="badge-preview"><span class="badge-empty">Selecciona persona</span></span></button>
+        <button class="strip-slot" type="button" data-position="3"><span class="slot-number">Posición 3</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
       </div>
-      <div class="hint">Haz clic en un espacio de la tira para cambiar la posición manual.</div>
+      <div class="hint">Vista física: QR a la izquierda, posición 1 arriba y posición 3 abajo. Haz clic en un espacio para seleccionarlo.</div>
     </aside>
   </main>
   <script>
@@ -554,7 +555,7 @@
         const gap = (layout.paper_height_mm - layout.badge_height_mm * 3) / 4;
         for (const slot of slots) {
           const value = Number(slot.dataset.position);
-          const physical = 4 - value;
+          const physical = value;
           const x = (layout.paper_width_mm - layout.badge_width_mm) / 2 + layout.global_offset_x_mm;
           const y = gap * physical + layout.badge_height_mm * (physical - 1) + layout.global_offset_y_mm;
           slot.style.left = `${x / layout.paper_width_mm * 100}%`;
