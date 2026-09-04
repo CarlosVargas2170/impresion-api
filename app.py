@@ -307,6 +307,8 @@ class ConfiguracionTira(BaseModel):
                 "badge_height_mm": 84,
                 "outer_margin_y_mm": 13,
                 "form_padding_left_mm": 6,
+                "content_offset_x_mm": 0,
+                "content_offset_y_mm": 4,
                 "global_offset_x_mm": 0,
                 "global_offset_y_mm": 0,
             }
@@ -329,6 +331,18 @@ class ConfiguracionTira(BaseModel):
         le=15,
         description="Margen interno simetrico entre los datos y el borde del cuadro.",
     )
+    content_offset_x_mm: float = Field(
+        default=0,
+        ge=-15,
+        le=15,
+        description="Desplazamiento interno horizontal; positivo mueve los datos a la derecha.",
+    )
+    content_offset_y_mm: float = Field(
+        default=4,
+        ge=-15,
+        le=15,
+        description="Desplazamiento interno vertical; positivo mueve los datos hacia abajo.",
+    )
     global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
     global_offset_y_mm: float = Field(default=0, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
@@ -346,6 +360,10 @@ class ConfiguracionTira(BaseModel):
             self.badge_width_mm, self.badge_height_mm
         ):
             raise ValueError("El margen interno no deja espacio para los datos")
+        if abs(self.content_offset_x_mm) > self.form_padding_left_mm:
+            raise ValueError("El desplazamiento horizontal supera el margen interno")
+        if abs(self.content_offset_y_mm) > self.form_padding_left_mm:
+            raise ValueError("El desplazamiento vertical supera el margen interno")
         return self
 
 
@@ -1338,6 +1356,8 @@ def generar_imagen_tira(
     margen_interno = mm_a_px(
         padding_formulario_mm(position, configuracion.form_padding_left_mm)
     )
+    desplazamiento_x = mm_a_px(configuracion.content_offset_x_mm)
+    desplazamiento_y = mm_a_px(configuracion.content_offset_y_mm)
     contenido = gafete.resize(
         (
             ancho_gafete - margen_interno * 2,
@@ -1346,14 +1366,23 @@ def generar_imagen_tira(
         Image.Resampling.LANCZOS,
     )
     gafete = Image.new("RGB", (ancho_gafete, alto_gafete), "white")
-    gafete.paste(contenido, (margen_interno, margen_interno))
+    gafete.paste(
+        contenido,
+        (margen_interno + desplazamiento_x, margen_interno + desplazamiento_y),
+    )
 
     # El QR respeta el mismo margen interno en todas las posiciones.
     codigo_qr = generar_codigo_qr(url_networking(data))
-    qr_x = gafete.width - codigo_qr.width - margen_interno
+    qr_x = (
+        gafete.width
+        - codigo_qr.width
+        - margen_interno
+        + desplazamiento_x
+    )
     qr_y = (
         (gafete.height - codigo_qr.height) // 2
         - mm_a_px(QR_DESPLAZAMIENTO_ARRIBA_MM)
+        + desplazamiento_y
     )
     gafete.paste(codigo_qr, (qr_x, qr_y))
 

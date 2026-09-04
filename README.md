@@ -10,6 +10,9 @@ siguiente trabajo comienza una tira nueva.
 La configuración de la tira incluye `form_padding_left_mm`, con `6 mm` por defecto,
 como margen interno simétrico entre los datos y el borde de cada formulario. Se aplica
 exactamente igual en las tres posiciones y puede ajustarse mediante `PUT /print-layout`.
+Los campos `content_offset_x_mm` y `content_offset_y_mm` aplican una corrección
+interna uniforme. El eje transversal queda en `0 mm` y el eje longitudinal usa `4 mm`:
+hacia abajo con la tira vertical, equivalente a la derecha al verla girada.
 
 La tira mide `107 × 278 mm`. Cada posición mide `102 × 84 mm`; los tres
 formularios están unidos verticalmente y dejan `13 mm` en los extremos superior e

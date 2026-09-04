@@ -332,18 +332,46 @@ class ImpresionTiraTests(unittest.TestCase):
             self.formulario(),
             "formulario-de-prueba",
             2,
-            ConfiguracionTira(form_padding_left_mm=0),
+            ConfiguracionTira(
+                form_padding_left_mm=0,
+                content_offset_x_mm=0,
+                content_offset_y_mm=0,
+            ),
         )
         con_padding = generar_imagen_tira(
             self.formulario(),
             "formulario-de-prueba",
             2,
-            ConfiguracionTira(form_padding_left_mm=4),
+            ConfiguracionTira(
+                form_padding_left_mm=4,
+                content_offset_x_mm=0,
+                content_offset_y_mm=0,
+            ),
         )
 
         caja_sin_padding = self.contenido_impreso(sin_padding)
         caja_con_padding = self.contenido_impreso(con_padding)
         self.assertGreater(caja_con_padding[0], caja_sin_padding[0])
+
+    def test_desplaza_el_contenido_cuatro_mm_solo_en_el_eje_longitudinal(self):
+        centrada = generar_imagen_tira(
+            self.formulario(),
+            "formulario-de-prueba",
+            2,
+            ConfiguracionTira(content_offset_x_mm=0, content_offset_y_mm=0),
+        )
+        desplazada = generar_imagen_tira(
+            self.formulario(),
+            "formulario-de-prueba",
+            2,
+            ConfiguracionTira(),
+        )
+
+        caja_centrada = self.contenido_impreso(centrada)
+        caja_desplazada = self.contenido_impreso(desplazada)
+        diferencia = api.mm_a_px(4)
+        self.assertEqual(caja_desplazada[0] - caja_centrada[0], 0)
+        self.assertEqual(caja_desplazada[1] - caja_centrada[1], diferencia)
 
     def test_margen_y_centro_horizontal_son_iguales_en_las_tres_posiciones(self):
         configuracion = ConfiguracionTira()
