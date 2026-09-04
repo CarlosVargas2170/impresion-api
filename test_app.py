@@ -514,6 +514,73 @@ class ImpresionTiraTests(unittest.TestCase):
         self.assertEqual(nueva["next_position"], api.POSICION_IMPRESION)
         self.assertNotEqual(corregido["strip_id"], nueva["strip_id"])
 
+    def test_worker_en_modo_normal_recorre_las_tres_posiciones(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                respuestas = [
+                    api.procesar_impresion(self.formulario(), simulate=True)
+                    for _ in range(4)
+                ]
+
+        self.assertEqual([item["position"] for item in respuestas], [1, 2, 3, 1])
+        self.assertEqual(len({item["strip_id"] for item in respuestas[:3]}), 1)
+        self.assertNotEqual(respuestas[2]["strip_id"], respuestas[3]["strip_id"])
+        self.assertEqual(
+            [item["strip_completed"] for item in respuestas],
+            [False, False, True, False],
+        )
+
+    def test_pausa_conserva_posicion_y_reset_inicia_otra_tira(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(position_mode="sequential")
+                )
+                primera = api.procesar_impresion(self.formulario(), simulate=True)
+                pausado = api.guardar_control_worker(
+                    api.ConfiguracionControlWorker(
+                        enabled=False,
+                        position_mode="sequential",
+                    )
+                )
+                reseteado = api.reiniciar_posicion_worker()
+
+        self.assertEqual(primera["next_position"], 2)
+        self.assertEqual(pausado["next_position"], 2)
+        self.assertEqual(pausado["status"], "offline")
+        self.assertFalse(pausado["worker_online"])
+        self.assertEqual(reseteado["next_position"], 1)
+        self.assertEqual(reseteado["status"], "offline")
+
+    def test_heartbeat_confirma_que_el_proceso_worker_esta_activo(self):
+        with tempfile.TemporaryDirectory() as temporal:
+            directorio = Path(temporal)
+            with (
+                patch.object(api, "DIRECTORIO_DATOS", directorio),
+                patch.object(api, "RUTA_DB", directorio / "forms.db"),
+            ):
+                api.inicializar_db()
+                api.registrar_heartbeat_worker(pid=4321)
+                estado = api.obtener_estado_control_worker()
+
+        self.assertTrue(estado["worker_online"])
+        self.assertEqual(estado["status"], "running")
+        self.assertEqual(estado["worker_pid"], 4321)
+        self.assertIsNotNone(estado["last_heartbeat"])
+
 
 class AlmacenamientoTests(unittest.TestCase):
     def test_guarda_consulta_y_genera_qr(self):
@@ -648,6 +715,9 @@ class DocumentacionOpenAPITests(unittest.TestCase):
                 ("GET", "/bluetooth/ports"),
                 ("GET", "/print-layout"),
                 ("PUT", "/print-layout"),
+                ("GET", "/worker-control"),
+                ("PUT", "/worker-control"),
+                ("POST", "/worker-control/reset-position"),
                 ("GET", "/print-state"),
                 ("PUT", "/print-state"),
                 ("POST", "/print"),

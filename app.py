@@ -65,10 +65,10 @@ app = FastAPI(
     version="1.1.0",
     description=(
         "API local para registrar asistentes y asignar automaticamente sus gafetes a "
-        "exclusivamente la posicion 2 de una tira vertical de media hoja Carta.\n\n"
+        "una tira vertical de media hoja Carta.\n\n"
         "### Flujo recomendado\n"
         "1. Envia el formulario a `POST /print`.\n"
-        "2. La API reserva en SQLite las posiciones `1`, `2`, `3` y luego abre otra tira.\n"
+        "2. Configura una posicion fija o el recorrido normal `1`, `2`, `3`.\n"
         "3. Usa `GET /print-state` para consultar la secuencia.\n"
         "4. Usa `PUT /print-state` para corregir una posicion o iniciar otra tira.\n\n"
         "`POST /print` funciona en simulacion por defecto. Para usar el controlador "
@@ -333,6 +333,39 @@ class ConfiguracionTira(BaseModel):
         return self
 
 
+class ConfiguracionControlWorker(BaseModel):
+    """Control persistente que la interfaz comparte con el proceso del worker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Si es false, el worker permanece vivo pero no toma registros nuevos.",
+    )
+    position_mode: Literal["fixed", "sequential"] = Field(
+        default="fixed",
+        description="fixed usa siempre una posicion; sequential recorre 1, 2 y 3.",
+    )
+    fixed_position: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="Posicion usada cuando position_mode es fixed.",
+    )
+
+
+class EstadoControlWorker(ConfiguracionControlWorker):
+    next_position: int = Field(description="Proxima posicion que utilizara el worker.")
+    status: Literal["running", "paused", "offline"] = Field(
+        description="Estado real del proceso segun su ultima senal periodica."
+    )
+    worker_online: bool = Field(description="Indica si el proceso worker responde.")
+    last_heartbeat: datetime | None = Field(
+        description="Fecha de la ultima senal enviada por el proceso worker."
+    )
+    worker_pid: int | None = Field(description="PID del proceso worker detectado.")
+
+
 class ImpresionPosicion(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -350,7 +383,7 @@ class ImpresionPosicion(BaseModel):
         default=2,
         ge=1,
         le=3,
-        description="Posicion solicitada; se sobrescribe siempre con la posicion 2.",
+        description="Posicion de la tira elegida para esta impresion manual.",
     )
     offset_x_mm: float = Field(default=0, ge=-20, le=20)
     offset_y_mm: float = Field(default=0, ge=-20, le=20)
@@ -568,6 +601,9 @@ def inicializar_db() -> None:
 
 
 CLAVE_CONFIGURACION_TIRA = "print_layout"
+CLAVE_CONTROL_WORKER = "worker_control"
+CLAVE_HEARTBEAT_WORKER = "worker_heartbeat"
+HEARTBEAT_WORKER_MAX_SEGUNDOS = 6
 
 
 def obtener_configuracion_tira() -> ConfiguracionTira:
@@ -595,6 +631,149 @@ def guardar_configuracion_tira(
                 (CLAVE_CONFIGURACION_TIRA, contenido),
             )
     return configuracion
+
+
+def _leer_control_worker(conexion: sqlite3.Connection) -> ConfiguracionControlWorker:
+    fila = conexion.execute(
+        "SELECT value FROM settings WHERE key = ?",
+        (CLAVE_CONTROL_WORKER,),
+    ).fetchone()
+    if fila is None:
+        return ConfiguracionControlWorker()
+    return ConfiguracionControlWorker.model_validate_json(fila["value"])
+
+
+def obtener_control_worker() -> ConfiguracionControlWorker:
+    with closing(conectar_db()) as conexion:
+        return _leer_control_worker(conexion)
+
+
+def _posicion_inicial_worker(control: ConfiguracionControlWorker) -> int:
+    return control.fixed_position if control.position_mode == "fixed" else 1
+
+
+def registrar_heartbeat_worker(pid: int | None = None) -> None:
+    heartbeat = {
+        "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        "pid": pid if pid is not None else os.getpid(),
+    }
+    with closing(conectar_db()) as conexion:
+        with conexion:
+            conexion.execute(
+                """
+                INSERT INTO settings (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (CLAVE_HEARTBEAT_WORKER, json.dumps(heartbeat)),
+            )
+
+
+def _estado_ejecucion_worker() -> dict[str, object]:
+    with closing(conectar_db()) as conexion:
+        fila = conexion.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (CLAVE_HEARTBEAT_WORKER,),
+        ).fetchone()
+    if fila is None:
+        return {"worker_online": False, "last_heartbeat": None, "worker_pid": None}
+    try:
+        heartbeat = json.loads(fila["value"])
+        fecha = datetime.fromisoformat(heartbeat["timestamp"])
+        antiguedad = (datetime.now().astimezone() - fecha).total_seconds()
+        online = -1 <= antiguedad <= HEARTBEAT_WORKER_MAX_SEGUNDOS
+        pid = int(heartbeat["pid"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {"worker_online": False, "last_heartbeat": None, "worker_pid": None}
+    return {
+        "worker_online": online,
+        "last_heartbeat": fecha,
+        "worker_pid": pid,
+    }
+
+
+def _respuesta_control_worker(
+    control: ConfiguracionControlWorker,
+    next_position: int,
+) -> dict[str, object]:
+    ejecucion = _estado_ejecucion_worker()
+    if not ejecucion["worker_online"]:
+        estado = "offline"
+    elif control.enabled:
+        estado = "running"
+    else:
+        estado = "paused"
+    return {
+        **control.model_dump(),
+        "next_position": next_position,
+        "status": estado,
+        **ejecucion,
+    }
+
+
+def _reiniciar_tira_worker(
+    conexion: sqlite3.Connection,
+    control: ConfiguracionControlWorker,
+) -> str:
+    conexion.execute(
+        "UPDATE print_strips SET status = 'abandoned' WHERE status = 'active'"
+    )
+    return _crear_tira(conexion, _posicion_inicial_worker(control))
+
+
+def guardar_control_worker(
+    control: ConfiguracionControlWorker,
+) -> dict[str, object]:
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            anterior = _leer_control_worker(conexion)
+            conexion.execute(
+                """
+                INSERT INTO settings (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (CLAVE_CONTROL_WORKER, control.model_dump_json()),
+            )
+            cambio_posicion = (
+                anterior.position_mode != control.position_mode
+                or anterior.fixed_position != control.fixed_position
+            )
+            if cambio_posicion:
+                _reiniciar_tira_worker(conexion, control)
+                next_position = _posicion_inicial_worker(control)
+            else:
+                tira = conexion.execute(
+                    "SELECT next_position FROM print_strips WHERE status = 'active' LIMIT 1"
+                ).fetchone()
+                if tira is None:
+                    _crear_tira(conexion, _posicion_inicial_worker(control))
+                    next_position = _posicion_inicial_worker(control)
+                else:
+                    next_position = int(tira["next_position"])
+            conexion.commit()
+        except Exception:
+            conexion.rollback()
+            raise
+    return _respuesta_control_worker(control, next_position)
+
+
+def reiniciar_posicion_worker() -> dict[str, object]:
+    with closing(conectar_db()) as conexion:
+        conexion.execute("BEGIN IMMEDIATE")
+        try:
+            control = _leer_control_worker(conexion)
+            _reiniciar_tira_worker(conexion, control)
+            conexion.commit()
+        except Exception:
+            conexion.rollback()
+            raise
+    return _respuesta_control_worker(control, _posicion_inicial_worker(control))
+
+
+def obtener_estado_control_worker() -> dict[str, object]:
+    control = obtener_control_worker()
+    estado = obtener_estado_posiciones()
+    return _respuesta_control_worker(control, int(estado["next_position"]))
 
 
 def guardar_formulario(data: Formulario) -> tuple[str, str]:
@@ -742,7 +921,14 @@ def obtener_estado_posiciones() -> dict[str, object]:
                     ORDER BY completed_at DESC LIMIT 1
                     """
                 ).fetchone()
-                strip_id = ultima["id"] if ultima else _crear_tira(conexion)
+                if ultima:
+                    strip_id = ultima["id"]
+                else:
+                    control = _leer_control_worker(conexion)
+                    strip_id = _crear_tira(
+                        conexion,
+                        _posicion_inicial_worker(control),
+                    )
             estado = _estado_tira(conexion, strip_id)
             conexion.commit()
             return estado
@@ -757,6 +943,12 @@ def ajustar_estado_posiciones(
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
+            control = _leer_control_worker(conexion)
+            siguiente = (
+                control.fixed_position
+                if control.position_mode == "fixed"
+                else ajuste.next_position
+            )
             tira = conexion.execute(
                 "SELECT id FROM print_strips WHERE status = 'active' LIMIT 1"
             ).fetchone()
@@ -768,12 +960,12 @@ def ajustar_estado_posiciones(
                 tira = None
 
             if tira is None:
-                strip_id = _crear_tira(conexion, POSICION_IMPRESION)
+                strip_id = _crear_tira(conexion, siguiente)
             else:
                 strip_id = tira["id"]
                 conexion.execute(
                     "UPDATE print_strips SET next_position = ? WHERE id = ?",
-                    (POSICION_IMPRESION, strip_id),
+                    (siguiente, strip_id),
                 )
             estado = _estado_tira(conexion, strip_id)
             conexion.commit()
@@ -787,14 +979,19 @@ def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
     with closing(conectar_db()) as conexion:
         conexion.execute("BEGIN IMMEDIATE")
         try:
+            control = _leer_control_worker(conexion)
             tira = conexion.execute(
                 "SELECT id, next_position FROM print_strips WHERE status = 'active' LIMIT 1"
             ).fetchone()
             if tira is None:
-                strip_id = _crear_tira(conexion)
+                position = _posicion_inicial_worker(control)
+                strip_id = _crear_tira(conexion, position)
             else:
                 strip_id = tira["id"]
-            position = POSICION_IMPRESION
+                position = int(tira["next_position"])
+
+            if control.position_mode == "fixed":
+                position = control.fixed_position
 
             job_id = str(uuid4())
             creado = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -807,16 +1004,26 @@ def reservar_posicion(form_id: str) -> tuple[str, str, int, int, bool]:
                 (job_id, strip_id, form_id, position, creado),
             )
 
-            completa = True
-            siguiente = POSICION_IMPRESION
-            conexion.execute(
-                """
-                UPDATE print_strips
-                SET next_position = ?, status = 'completed', completed_at = ?
-                WHERE id = ?
-                """,
-                (POSICION_IMPRESION, creado, strip_id),
+            completa = control.position_mode == "fixed" or position == 3
+            siguiente = (
+                control.fixed_position
+                if control.position_mode == "fixed"
+                else (1 if position == 3 else position + 1)
             )
+            if completa:
+                conexion.execute(
+                    """
+                    UPDATE print_strips
+                    SET next_position = ?, status = 'completed', completed_at = ?
+                    WHERE id = ?
+                    """,
+                    (siguiente, creado, strip_id),
+                )
+            else:
+                conexion.execute(
+                    "UPDATE print_strips SET next_position = ? WHERE id = ?",
+                    (siguiente, strip_id),
+                )
             conexion.commit()
             return job_id, strip_id, position, siguiente, completa
         except Exception:
@@ -845,9 +1052,11 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
         try:
             trabajo = conexion.execute(
                 """
-                SELECT rowid, strip_id, position
-                FROM print_jobs
-                WHERE id = ?
+                SELECT trabajo.rowid, trabajo.strip_id, trabajo.position,
+                       tira.status AS strip_status, tira.next_position
+                FROM print_jobs AS trabajo
+                JOIN print_strips AS tira ON tira.id = trabajo.strip_id
+                WHERE trabajo.id = ?
                 """,
                 (job_id,),
             ).fetchone()
@@ -873,7 +1082,7 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                 return False
 
             posicion = int(trabajo["position"])
-            if posicion in (2, 3):
+            if trabajo["strip_status"] == "completed":
                 otra_tira_activa = conexion.execute(
                     """
                     SELECT 1 FROM print_strips
@@ -893,7 +1102,7 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                     """,
                     (posicion, trabajo["strip_id"]),
                 )
-            else:
+            elif int(trabajo["next_position"]) == posicion + 1:
                 cursor = conexion.execute(
                     """
                     UPDATE print_strips
@@ -902,6 +1111,9 @@ def fallar_trabajo_y_devolver_posicion(job_id: str, error: str) -> bool:
                     """,
                     (posicion, trabajo["strip_id"], posicion + 1),
                 )
+            else:
+                conexion.commit()
+                return False
 
             recuperada = cursor.rowcount == 1
             conexion.commit()
@@ -1751,12 +1963,60 @@ def ajustar_configuracion_tira(
 
 
 @app.get(
+    "/worker-control",
+    tags=["Impresion"],
+    summary="Consultar el control del worker",
+    description=(
+        "Devuelve si el worker acepta registros, su modo de posicion y la proxima "
+        "posicion automatica. La impresion manual no modifica este estado."
+    ),
+    response_model=EstadoControlWorker,
+    operation_id="consultar_control_worker",
+)
+def consultar_control_worker() -> dict[str, object]:
+    return obtener_estado_control_worker()
+
+
+@app.put(
+    "/worker-control",
+    tags=["Impresion"],
+    summary="Configurar, pausar o reanudar el worker",
+    description=(
+        "Guarda el estado del worker y permite elegir una posicion fija o el recorrido "
+        "normal 1, 2 y 3. Cambiar el modo inicia una tira nueva."
+    ),
+    response_model=EstadoControlWorker,
+    responses={422: RESPUESTA_VALIDACION},
+    operation_id="configurar_control_worker",
+)
+def configurar_control_worker(
+    control: ConfiguracionControlWorker,
+) -> dict[str, object]:
+    return guardar_control_worker(control)
+
+
+@app.post(
+    "/worker-control/reset-position",
+    tags=["Impresion"],
+    summary="Reiniciar la posicion automatica del worker",
+    description=(
+        "Abandona la tira automatica activa e inicia otra en la posicion fija elegida "
+        "o en la posicion 1 cuando se usa el modo normal."
+    ),
+    response_model=EstadoControlWorker,
+    operation_id="reiniciar_posicion_automatica_worker",
+)
+def resetear_posicion_worker() -> dict[str, object]:
+    return reiniciar_posicion_worker()
+
+
+@app.get(
     "/print-state",
     tags=["Impresion"],
     summary="Consultar la tira activa y su siguiente posicion",
     description=(
-        "Devuelve la tira activa o la ultima tira completada y el formulario asignado "
-        "a la unica posicion habilitada: la 2."
+        "Devuelve la tira activa o la ultima tira completada, sus formularios y la "
+        "proxima posicion configurada para la impresion automatica."
     ),
     response_model=EstadoPosiciones,
     operation_id="consultar_estado_posiciones",

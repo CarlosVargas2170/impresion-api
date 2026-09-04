@@ -45,6 +45,22 @@
       border-radius: 7px;
       box-shadow: 0 8px 24px rgb(23 32 31 / 7%);
     }
+    .worker-panel { margin-bottom: 18px; }
+    .worker-panel[hidden] { display: none; }
+    .worker-visibility { width: fit-content; grid-template-columns: 18px auto; align-items: center; gap: 8px; margin: -12px 0 18px; cursor: pointer; }
+    .worker-visibility input { width: 18px; min-height: 18px; margin: 0; accent-color: #087d6b; }
+    .worker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .worker-heading h2 { margin: 0; font-size: 17px; }
+    .worker-state { padding: 5px 9px; color: #067647; background: #dff5ec; border-radius: 999px; font-size: 10px; font-weight: 850; text-transform: uppercase; }
+    .worker-state.paused { color: #9a3412; background: #ffedd5; }
+    .worker-state.offline { color: #b42318; background: #fee4e2; }
+    .worker-grid { display: grid; grid-template-columns: 1.2fr .8fr auto; align-items: end; gap: 12px; }
+    .worker-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+    .worker-actions .secondary { color: #32403d; background: #e7ecea; }
+    .worker-actions .warning { color: #fff; background: #b54708; }
+    .worker-summary { min-height: 42px; display: grid; align-content: center; padding: 8px 11px; color: #53615e; background: #f7f9f8; border: 1px solid #dce4e1; border-radius: 5px; font-size: 11px; }
+    .worker-summary strong { color: #17201f; font-size: 13px; }
+    .worker-note { margin: 12px 0 0; color: #596663; font-size: 11px; line-height: 1.45; }
     .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     label { display: grid; gap: 6px; color: #32403d; font-size: 12px; font-weight: 750; }
     .full { grid-column: 1 / -1; }
@@ -247,9 +263,11 @@
       main { width: min(100% - 28px, 620px); grid-template-columns: 1fr; gap: 34px; padding-top: 24px; }
       .preview-area { position: static; }
       .paper-help { grid-template-columns: minmax(160px, 200px) minmax(0, 1fr); }
+      .worker-grid { grid-template-columns: 1fr 1fr; }
+      .worker-summary { grid-column: 1 / -1; }
     }
     @media (max-width: 520px) {
-      .controls, .search-row, .queue-help { grid-template-columns: 1fr; }
+      .controls, .search-row, .queue-help, .worker-grid { grid-template-columns: 1fr; }
       .full { grid-column: auto; }
       .person { grid-template-columns: 1fr; }
       .person-actions, .tabs { flex-wrap: wrap; }
@@ -257,6 +275,7 @@
       .paper-help { grid-template-columns: 1fr; }
       .feed-sheet { width: 126px; }
       .topbar span:last-child { display: none; }
+      .worker-summary { grid-column: auto; }
     }
   </style>
 </head>
@@ -266,6 +285,36 @@
     <section>
       <h1>Impresión manual</h1>
       <p class="subtitle">Busca una persona, elige la posición y envíala a imprimir.</p>
+      <label class="worker-visibility"><input id="showWorkerConfig" type="checkbox" checked><span>Mostrar configuraci&oacute;n del worker</span></label>
+      <section id="workerPanel" class="panel worker-panel" aria-labelledby="workerTitle">
+        <div class="worker-heading">
+          <h2 id="workerTitle">Configuraci&oacute;n del worker (impresión manual)</h2>
+          <span id="workerState" class="worker-state">Consultando...</span>
+        </div>
+        <div class="worker-grid">
+          <label>Forma de impresi&oacute;n autom&aacute;tica
+            <select id="workerMode">
+              <option value="fixed">Una posici&oacute;n fija</option>
+              <option value="sequential">Normal: pos. 1 &rarr; 2 &rarr; 3</option>
+            </select>
+          </label>
+          <label>Posici&oacute;n fija
+            <select id="workerPosition">
+              <option value="1">Posici&oacute;n 1</option>
+              <option value="2">Posici&oacute;n 2</option>
+              <option value="3">Posici&oacute;n 3</option>
+            </select>
+          </label>
+          <div class="worker-summary"><span>Pr&oacute;xima autom&aacute;tica</span><strong id="workerNextPosition">&mdash;</strong></div>
+        </div>
+        <div class="worker-actions">
+          <button id="saveWorker" type="button">Guardar configuraci&oacute;n</button>
+          <button id="resetWorkerPosition" class="secondary" type="button">Resetear posici&oacute;n</button>
+          <button id="toggleWorker" class="warning" type="button">Detener worker</button>
+        </div>
+        <p class="worker-note">En modo normal el worker usa 1, luego 2 y luego 3 antes de comenzar otra tira. Detener lo pausa sin cerrar el proceso: si ya est&aacute; imprimiendo, termina ese trabajo y no toma otro. La impresi&oacute;n manual sigue disponible y no altera esta secuencia.</p>
+        <div id="workerStatus" class="status" role="status" aria-live="polite"></div>
+      </section>
       <section class="paper-help" aria-labelledby="paperHelpTitle">
         <div class="feed-visual">
           <div class="feed-sheet" aria-label="Vista final: posición 1 arriba, posición 2 al centro y posición 3 abajo">
@@ -348,6 +397,16 @@
     const previousPage = document.querySelector("#previousPage");
     const nextPage = document.querySelector("#nextPage");
     const pageInfo = document.querySelector("#pageInfo");
+    const workerState = document.querySelector("#workerState");
+    const showWorkerConfig = document.querySelector("#showWorkerConfig");
+    const workerPanel = document.querySelector("#workerPanel");
+    const workerMode = document.querySelector("#workerMode");
+    const workerPosition = document.querySelector("#workerPosition");
+    const workerNextPosition = document.querySelector("#workerNextPosition");
+    const saveWorker = document.querySelector("#saveWorker");
+    const resetWorkerPosition = document.querySelector("#resetWorkerPosition");
+    const toggleWorker = document.querySelector("#toggleWorker");
+    const workerStatus = document.querySelector("#workerStatus");
     const slots = [...document.querySelectorAll(".strip-slot")];
     let filter = "pending";
     let people = [];
@@ -359,6 +418,9 @@
     let knownStates = new Map();
     let queueCounts = { pending: 0, processing: 0, printed: 0 };
     let page = 1;
+    let workerEnabled = true;
+    let workerBusy = false;
+    let workerEditing = false;
     const pageSize = 10;
     const printedSlots = [null, null, null];
 
@@ -369,6 +431,81 @@
       if (typeof data?.detail === "string") return data.detail;
       if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg).join(". ");
       return fallback;
+    }
+    function renderWorkerControl(data) {
+      workerEnabled = data.enabled;
+      workerMode.value = data.position_mode;
+      workerPosition.value = String(data.fixed_position);
+      workerPosition.disabled = data.position_mode === "sequential" || workerBusy;
+      workerNextPosition.textContent = `Posición ${data.next_position}`;
+      const labels = { running: "En ejecución", paused: "Pausado", offline: "Worker desconectado" };
+      workerState.textContent = labels[data.status] || "Estado desconocido";
+      workerState.classList.toggle("paused", data.status === "paused");
+      workerState.classList.toggle("offline", data.status === "offline");
+      workerState.title = data.worker_online
+        ? `Proceso detectado${data.worker_pid ? ` (PID ${data.worker_pid})` : ""}`
+        : "No se recibe señal del proceso print_worker.py";
+      toggleWorker.textContent = data.enabled ? "Detener worker" : "Reanudar worker";
+      toggleWorker.classList.toggle("warning", data.enabled);
+    }
+    function setWorkerBusy(value) {
+      workerBusy = value;
+      saveWorker.disabled = value;
+      resetWorkerPosition.disabled = value;
+      toggleWorker.disabled = value;
+      workerMode.disabled = value;
+      workerPosition.disabled = value || workerMode.value === "sequential";
+    }
+    async function requestWorker(url, options = {}) {
+      setWorkerBusy(true);
+      workerStatus.className = "status";
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (!response.ok) throw new Error(errorMessage(data, "No se pudo configurar el worker"));
+        renderWorkerControl(data);
+        workerStatus.className = "status success";
+        return data;
+      } catch (error) {
+        workerStatus.className = "status error";
+        workerStatus.textContent = error.message;
+        throw error;
+      } finally {
+        setWorkerBusy(false);
+      }
+    }
+    async function loadWorkerControl() {
+      if (workerBusy || workerEditing) return;
+      try {
+        const response = await fetch("/worker-control");
+        const data = await response.json();
+        if (!response.ok) throw new Error(errorMessage(data, "No se pudo consultar el worker"));
+        renderWorkerControl(data);
+      } catch (_) {
+        workerState.textContent = "Sin conexión";
+        workerState.classList.add("paused");
+      }
+    }
+    async function saveWorkerConfiguration(enabled = workerEnabled) {
+      const data = await requestWorker("/worker-control", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled,
+          position_mode: workerMode.value,
+          fixed_position: Number(workerPosition.value)
+        })
+      });
+      workerStatus.textContent = data.status === "running"
+        ? `Worker detectado y activo. Próxima impresión: posición ${data.next_position}.`
+        : data.status === "paused"
+          ? "Worker detectado pero pausado: no tomará registros nuevos."
+          : "Configuración guardada, pero print_worker.py no está conectado.";
+      workerEditing = false;
+    }
+    function updateWorkerPanelVisibility() {
+      workerPanel.hidden = !showWorkerConfig.checked;
+      localStorage.setItem("showWorkerConfig", String(showWorkerConfig.checked));
     }
     function normalizePerson(data) {
       const normalized = { ...data };
@@ -567,15 +704,32 @@
     }
     search.addEventListener("input", () => { page = 1; clearTimeout(debounce); debounce = setTimeout(refreshPeople, 250); });
     position.addEventListener("change", renderStrip);
+    showWorkerConfig.addEventListener("change", updateWorkerPanelVisibility);
+    workerMode.addEventListener("change", () => { workerEditing = true; workerPosition.disabled = workerMode.value === "sequential"; });
+    workerPosition.addEventListener("change", () => { workerEditing = true; });
+    saveWorker.addEventListener("click", () => { saveWorkerConfiguration().catch(() => {}); });
+    toggleWorker.addEventListener("click", () => { saveWorkerConfiguration(!workerEnabled).catch(() => {}); });
+    resetWorkerPosition.addEventListener("click", async () => {
+      if (!confirm("¿Resetear la posición del worker e iniciar una tira nueva?")) return;
+      try {
+        const data = await requestWorker("/worker-control/reset-position", { method: "POST" });
+        workerEditing = false;
+        workerStatus.textContent = `Posición reseteada. La próxima impresión usará la posición ${data.next_position}.`;
+      } catch (_) {}
+    });
     for (const slot of slots) slot.addEventListener("click", () => { position.value = slot.dataset.position; renderStrip(); });
     for (const tab of tabs) tab.addEventListener("click", () => { filter = tab.dataset.status; page = 1; tabs.forEach(item => item.classList.toggle("active", item === tab)); people = []; renderPeople(); refreshPeople(); });
     previousPage.addEventListener("click", () => { if (page > 1) { page -= 1; people = []; renderPeople(); refreshPeople(); } });
     nextPage.addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((queueCounts[filter] || 0) / pageSize)); if (page < totalPages) { page += 1; people = []; renderPeople(); refreshPeople(); } });
     loadPrinters();
     loadLayout();
+    showWorkerConfig.checked = localStorage.getItem("showWorkerConfig") !== "false";
+    workerPanel.hidden = !showWorkerConfig.checked;
+    loadWorkerControl();
     loadPeople();
     renderStrip();
     setInterval(loadPeople, 1000);
+    setInterval(loadWorkerControl, 1500);
   </script>
 </body>
 </html>

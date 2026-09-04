@@ -10,7 +10,12 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app import Formulario, procesar_impresion
+from app import (
+    Formulario,
+    obtener_control_worker,
+    procesar_impresion,
+    registrar_heartbeat_worker,
+)
 
 
 LOGGER = logging.getLogger("nexus.print_worker")
@@ -515,33 +520,69 @@ def ejecutar_worker(stop_event: threading.Event | None = None) -> None:
         batch_size,
         simulate,
     )
+    heartbeat_stop = threading.Event()
+
+    def mantener_heartbeat() -> None:
+        while not heartbeat_stop.is_set():
+            try:
+                registrar_heartbeat_worker()
+            except Exception:
+                LOGGER.exception("No se pudo actualizar la senal de vida del worker")
+            heartbeat_stop.wait(2.0)
+
+    heartbeat_thread = threading.Thread(
+        target=mantener_heartbeat,
+        name="worker-heartbeat",
+        daemon=True,
+    )
+    heartbeat_thread.start()
     total_processed = 0
-    while not stop_event.is_set():
-        inicio = monotonic()
-        try:
-            procesadas = ejecutar_ciclo(
-                cola,
-                batch_size=batch_size,
-                simulate=simulate,
-                printer_name=printer_name,
-                transport=transport,
-                bluetooth_port=bluetooth_port,
-                bluetooth_baudrate=bluetooth_baudrate,
-            )
-            total_processed += procesadas
-        except Exception:
-            procesadas = 0
-            LOGGER.exception("No se pudo consultar la cola de impresion en PostgreSQL")
+    estaba_pausado = False
+    try:
+        while not stop_event.is_set():
+            inicio = monotonic()
+            try:
+                control = obtener_control_worker()
+            except Exception:
+                LOGGER.exception("No se pudo consultar el control local del worker")
+                stop_event.wait(min(poll_seconds, 1.0))
+                continue
+            if not control.enabled:
+                if not estaba_pausado:
+                    LOGGER.info("Worker pausado desde la consola de impresion manual")
+                estaba_pausado = True
+                stop_event.wait(min(poll_seconds, 1.0))
+                continue
+            if estaba_pausado:
+                LOGGER.info("Worker reanudado desde la consola de impresion manual")
+                estaba_pausado = False
+            try:
+                procesadas = ejecutar_ciclo(
+                    cola,
+                    batch_size=batch_size,
+                    simulate=simulate,
+                    printer_name=printer_name,
+                    transport=transport,
+                    bluetooth_port=bluetooth_port,
+                    bluetooth_baudrate=bluetooth_baudrate,
+                )
+                total_processed += procesadas
+            except Exception:
+                procesadas = 0
+                LOGGER.exception("No se pudo consultar la cola de impresion en PostgreSQL")
 
-        if not print_all and total_processed >= max_records:
-            LOGGER.info(
-                "Limite controlado alcanzado: %s registro(s) procesado(s)",
-                total_processed,
-            )
-            break
+            if not print_all and total_processed >= max_records:
+                LOGGER.info(
+                    "Limite controlado alcanzado: %s registro(s) procesado(s)",
+                    total_processed,
+                )
+                break
 
-        transcurrido = monotonic() - inicio
-        stop_event.wait(max(0.0, poll_seconds - transcurrido))
+            transcurrido = monotonic() - inicio
+            stop_event.wait(max(0.0, poll_seconds - transcurrido))
+    finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=3.0)
 
 
 def main() -> None:
