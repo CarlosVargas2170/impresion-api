@@ -212,6 +212,22 @@ class SqlWorkerTests(unittest.TestCase):
         self.assertNotIn("PRINT_STATUS", printed)
         self.assertNotIn("PRINT_STATUS", failed)
 
+    def test_reclamo_manual_es_atomico_y_permite_reimpresion(self):
+        consulta = " ".join(worker.CLAIM_PERSON_SQL.split()).upper()
+
+        self.assertIn("FOR UPDATE SKIP LOCKED", consulta)
+        self.assertIn("ID::TEXT = %S", consulta)
+        self.assertIn("PENDING_TO_PRINT = 0 OR PRINTED_AT IS NOT NULL", consulta)
+        self.assertIn("SET PENDING_TO_PRINT = 1", consulta)
+
+    def test_buscador_incluye_pendientes_e_impresas(self):
+        consulta = " ".join(worker.SEARCH_PEOPLE_SQL.split()).upper()
+
+        self.assertIn("PENDING_TO_PRINT = 0", consulta)
+        self.assertIn("PRINTED_AT IS NOT NULL", consulta)
+        self.assertIn("ILIKE %S", consulta)
+        self.assertIn("LIMIT %S", consulta)
+
 
 if __name__ == "__main__":
     unittest.main()

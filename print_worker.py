@@ -66,6 +66,75 @@ SET pending_to_print = 0,
 WHERE id = %s AND pending_to_print = 1
 """
 
+SEARCH_PEOPLE_SQL = """
+SELECT
+    id::text AS id,
+    first_name,
+    paternal_surname,
+    maternal_surname,
+    description,
+    company,
+    job_title,
+    phone_prefix,
+    phone_number,
+    email,
+    consent_at,
+    CASE WHEN printed_at IS NOT NULL THEN 'printed' ELSE 'pending' END AS print_state,
+    printed_at,
+    print_error
+FROM persons
+WHERE is_active = TRUE
+  AND (
+      (%s = 'pending' AND pending_to_print = 0)
+      OR (%s = 'printed' AND printed_at IS NOT NULL)
+      OR (%s = 'all' AND (pending_to_print = 0 OR printed_at IS NOT NULL))
+  )
+  AND (
+      %s = ''
+      OR concat_ws(
+          ' ', first_name, paternal_surname, maternal_surname,
+          company, job_title, email, phone_number
+      ) ILIKE %s
+  )
+ORDER BY
+    CASE WHEN printed_at IS NULL THEN 0 ELSE 1 END,
+    COALESCE(printed_at, created_at) DESC,
+    id DESC
+LIMIT %s
+"""
+
+CLAIM_PERSON_SQL = """
+WITH candidate AS (
+    SELECT id
+    FROM persons
+    WHERE id::text = %s
+      AND is_active = TRUE
+      AND (pending_to_print = 0 OR printed_at IS NOT NULL)
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE persons AS person
+SET pending_to_print = 1,
+    print_claimed_at = NOW(),
+    printed_at = NULL,
+    print_attempts = print_attempts + 1,
+    print_error = NULL,
+    updated_at = NOW()
+FROM candidate
+WHERE person.id = candidate.id
+RETURNING
+    person.id,
+    person.first_name,
+    person.paternal_surname,
+    person.maternal_surname,
+    person.description,
+    person.company,
+    person.job_title,
+    person.phone_prefix,
+    person.phone_number,
+    person.email,
+    person.consent_at
+"""
+
 FORM_FIELDS = (
     "first_name",
     "paternal_surname",
@@ -182,6 +251,32 @@ class ColaImpresionPostgres:
         with self._conectar() as conexion:
             with conexion.cursor() as cursor:
                 cursor.execute(query)
+                registro = cursor.fetchone()
+        return dict(registro) if registro is not None else None
+
+    def buscar_personas(
+        self,
+        search: str = "",
+        status: str = "all",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        termino = search.strip()
+        patron = f"%{termino}%"
+        with self._conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(
+                    SEARCH_PEOPLE_SQL,
+                    (status, status, status, termino, patron, limit),
+                )
+                registros = cursor.fetchall()
+        return [dict(registro) for registro in registros]
+
+    def reclamar_persona(self, person_id: Any) -> dict[str, Any] | None:
+        """Reserva una persona concreta para impresion o reimpresion manual."""
+
+        with self._conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(CLAIM_PERSON_SQL, (person_id,))
                 registro = cursor.fetchone()
         return dict(registro) if registro is not None else None
 

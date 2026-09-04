@@ -533,6 +533,65 @@ class AlmacenamientoTests(unittest.TestCase):
                 self.assertEqual(recuperada, esperada)
 
 
+class PersonasParaImpresionTests(unittest.TestCase):
+    @patch("print_worker.cargar_url_postgres", return_value="postgresql://test/db")
+    @patch("print_worker.ColaImpresionPostgres")
+    def test_busca_personas_por_estado_y_texto(self, cola_clase, _cargar_url):
+        cola = cola_clase.return_value
+        cola.buscar_personas.return_value = [
+            {
+                **FormularioTests().datos_validos(),
+                "id": "persona-1",
+                "print_state": "printed",
+                "printed_at": "2026-09-03T10:00:00-04:00",
+                "print_error": None,
+            }
+        ]
+
+        resultado = api.buscar_personas_para_impresion("Ana", "printed", 10)
+
+        self.assertEqual(resultado["count"], 1)
+        self.assertEqual(resultado["people"][0]["id"], "persona-1")
+        cola.buscar_personas.assert_called_once_with("Ana", "printed", 10)
+
+    @patch("app.procesar_impresion")
+    @patch("print_worker.cargar_url_postgres", return_value="postgresql://test/db")
+    @patch("print_worker.ColaImpresionPostgres")
+    def test_impresion_manual_reserva_e_imprime_persona(
+        self,
+        cola_clase,
+        _cargar_url,
+        procesar,
+    ):
+        cola = cola_clase.return_value
+        cola.reclamar_persona.return_value = {
+            **FormularioTests().datos_validos(),
+            "id": "persona-1",
+        }
+        procesar.return_value = {
+            "ok": True,
+            "message": "Simulacion asignada a la posicion 1",
+            "simulated": True,
+            "printer": None,
+            "id": "form-1",
+            "strip_id": "strip-1",
+            "position": 1,
+            "next_position": 2,
+            "strip_completed": False,
+            "view_url": "http://example.test/forms/form-1",
+        }
+
+        resultado = api.imprimir_persona_manualmente(
+            "persona-1",
+            api.ImpresionManualPersona(simulate=True),
+        )
+
+        self.assertEqual(resultado["position"], 1)
+        cola.reclamar_persona.assert_called_once_with("persona-1")
+        cola.marcar_impresa.assert_called_once_with("persona-1")
+        self.assertTrue(procesar.call_args.kwargs["simulate"])
+
+
 class DocumentacionOpenAPITests(unittest.TestCase):
     def test_documenta_todos_los_endpoints(self):
         esquema = api.app.openapi()
@@ -556,6 +615,8 @@ class DocumentacionOpenAPITests(unittest.TestCase):
                 ("POST", "/api/forms/{form_id}/print-position"),
                 ("GET", "/forms/{form_id}"),
                 ("GET", "/printers"),
+                ("GET", "/people"),
+                ("POST", "/people/{person_id}/print"),
                 ("GET", "/bluetooth/ports"),
                 ("GET", "/print-layout"),
                 ("PUT", "/print-layout"),

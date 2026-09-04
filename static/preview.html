@@ -67,6 +67,67 @@
       font-size: 14px;
     }
 
+    .people-panel {
+      margin: 0 0 28px;
+      padding: 16px;
+      background: #fff;
+      border: 1px solid #cbd3d0;
+      border-radius: 7px;
+      box-shadow: 0 8px 24px rgb(23 32 31 / 7%);
+    }
+
+    .people-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .people-heading h2 { margin: 0; font-size: 16px; }
+    .people-heading small { color: #71807c; }
+
+    .people-tools {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+    }
+
+    .people-tabs { display: flex; gap: 5px; }
+    .people-tabs button {
+      min-height: 44px;
+      padding: 8px 12px;
+      color: #53615e;
+      background: #edf1ef;
+    }
+    .people-tabs button.active { color: #fff; background: #087d6b; }
+
+    .people-results {
+      max-height: 250px;
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+      overflow-y: auto;
+    }
+
+    .person-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 11px;
+      background: #f7f9f8;
+      border: 1px solid #dce4e1;
+      border-radius: 5px;
+    }
+
+    .person-name { display: block; font-size: 13px; font-weight: 800; }
+    .person-meta { display: block; margin-top: 3px; color: #71807c; font-size: 11px; }
+    .person-actions { display: flex; gap: 6px; }
+    .person-actions button { min-height: 34px; padding: 6px 10px; font-size: 11px; }
+    .person-actions .load-person { color: #32403d; background: #dce4e1; }
+    .people-empty { padding: 18px 8px; color: #71807c; font-size: 12px; text-align: center; }
+
     form {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -144,7 +205,7 @@
       border: 0;
       border-radius: 5px;
       font-weight: 800;
-      cursor: default;
+      cursor: pointer;
     }
 
     button:hover { background: #066957; }
@@ -195,18 +256,14 @@
     .strip {
       width: min(100%, 270px);
       aspect-ratio: 107.95 / 279.4;
-      display: grid;
-      grid-template-rows: repeat(3, 1fr);
-      gap: 10px;
-      padding: 14px 10px;
+      position: relative;
       background: #fff;
       border: 1px solid #cbd3d0;
       box-shadow: 0 18px 42px rgb(23 32 31 / 18%);
     }
 
     .strip-slot {
-      position: relative;
-      min-height: 0;
+      position: absolute;
       padding: 8px;
       overflow: hidden;
       color: #17201f;
@@ -225,12 +282,11 @@
       box-shadow: 0 0 0 3px rgb(8 125 107 / 12%);
     }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
-    .strip-slot[data-position="1"], .strip-slot[data-position="3"] { display: none; }
-
     /* Equivale a +4 mm para la posicion 1 y +2 mm para la posicion 2. */
-    .strip-slot[data-position="1"] { --position-offset-x: 3.7%; }
-    .strip-slot[data-position="2"] { --position-offset-x: 1.85%; }
-    .strip-slot[data-position="3"] { --position-offset-x: 0%; }
+    .strip-slot[data-position="1"] { top: 67.48%; --position-offset-x: 3.7%; }
+    .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
+    .strip-slot[data-position="3"] { top: 3.17%; --position-offset-x: 0%; }
+    .strip-slot[data-position] { left: 3.68%; width: 92.64%; height: 28.63%; }
 
     .slot-number {
       position: absolute;
@@ -254,7 +310,7 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
-      transform: translate(-50%, -50%) rotate(90deg);
+      transform: translate(-50%, -50%) rotate(-90deg);
       transform-origin: center;
     }
 
@@ -270,7 +326,7 @@
       color: #9ba6a3;
       font: 700 11px/1.2 system-ui, sans-serif;
       text-transform: uppercase;
-      transform: rotate(-90deg);
+      transform: rotate(90deg);
     }
 
     .badge-name {
@@ -313,6 +369,7 @@
         padding-top: 24px;
       }
       .preview-area { position: static; }
+      .people-tools { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 520px) {
@@ -320,6 +377,7 @@
       .full { grid-column: auto; }
       .actions { grid-column: auto; align-items: flex-start; flex-direction: column; }
       .strip { width: min(100%, 250px); }
+      .person-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -333,6 +391,21 @@
     <section>
       <h1>Vista previa de impresion</h1>
       <p class="subtitle">Completa los datos y revisa el resultado antes de enviarlo.</p>
+
+      <section class="people-panel" aria-labelledby="peopleTitle">
+        <div class="people-heading">
+          <h2 id="peopleTitle">Impresion manual</h2>
+          <small id="peopleCount">Actualizando...</small>
+        </div>
+        <div class="people-tools">
+          <input id="peopleSearch" type="search" placeholder="Buscar por nombre, empresa, correo o telefono" autocomplete="off" aria-label="Buscar personas">
+          <div class="people-tabs" role="group" aria-label="Estado de impresion">
+            <button type="button" class="active" data-people-status="pending">Por imprimir</button>
+            <button type="button" data-people-status="printed">Impresas</button>
+          </div>
+        </div>
+        <div id="peopleResults" class="people-results" aria-live="polite"></div>
+      </section>
 
       <form id="formulario">
         <label>
@@ -384,7 +457,9 @@
         <label>
           Siguiente posicion automatica
           <select id="targetPosition" disabled>
+            <option value="1">Posicion 1 · inferior</option>
             <option value="2">Posicion 2 · central</option>
+            <option value="3">Posicion 3 · superior</option>
           </select>
         </label>
         <label class="mode-control">
@@ -402,15 +477,23 @@
     </section>
 
     <aside class="preview-area" aria-label="Vista previa del papel">
-      <div class="preview-label"><span>Tira vertical</span><span>107,95 × 279,4 mm</span></div>
-      <div class="sheet-summary">Solo posicion 2 · formulario girado en vertical</div>
-      <div id="strip" class="strip" aria-label="Media hoja Carta con la posicion 2 habilitada">
+      <div class="preview-label"><span>Tira vertical</span><span id="sheetDimensions">107,95 × 279,4 mm</span></div>
+      <div class="sheet-summary">3 cuadros · formulario girado en vertical</div>
+      <div id="strip" class="strip" aria-label="Media hoja Carta con tres posiciones">
+        <button class="strip-slot" type="button" data-position="3" aria-label="Seleccionar posicion 3">
+          <span class="slot-number">Posicion 3</span>
+          <span class="badge-preview"></span>
+        </button>
         <button class="strip-slot" type="button" data-position="2" aria-label="Seleccionar posicion 2">
           <span class="slot-number">Posicion 2</span>
           <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
         </button>
+        <button class="strip-slot active" type="button" data-position="1" aria-label="Seleccionar posicion 1">
+          <span class="slot-number">Posicion 1</span>
+          <span class="badge-preview"><span class="badge-empty">Disponible</span></span>
+        </button>
       </div>
-      <div class="simulation-note">Todas las impresiones se colocan unicamente en la posicion central.</div>
+      <div class="simulation-note">Selecciona uno de los tres cuadros. En simulacion se guardara el formulario y se ocupara visualmente esa posicion.</div>
     </aside>
   </main>
 
@@ -423,6 +506,12 @@
     const printer = document.querySelector("#printer");
     const targetPosition = document.querySelector("#targetPosition");
     const simulationMode = document.querySelector("#simulationMode");
+    const peopleSearch = document.querySelector("#peopleSearch");
+    const peopleResults = document.querySelector("#peopleResults");
+    const peopleCount = document.querySelector("#peopleCount");
+    const peopleTabs = [...document.querySelectorAll("[data-people-status]")];
+    const strip = document.querySelector("#strip");
+    const sheetDimensions = document.querySelector("#sheetDimensions");
     const slots = [...document.querySelectorAll(".strip-slot")];
     const printedSlots = [null, null, null];
     let savedPreview = null;
@@ -432,6 +521,9 @@
       "first_name", "paternal_surname", "maternal_surname",
       "company", "job_title", "description"
     ]);
+    let peopleStatus = "pending";
+    let peopleRequest = null;
+    let peopleTimer = null;
 
     function payload() {
       const data = Object.fromEntries(new FormData(form).entries());
@@ -487,6 +579,107 @@
       return fallback;
     }
 
+    function fillForm(data) {
+      for (const key of [
+        "first_name", "paternal_surname", "maternal_surname", "description",
+        "company", "job_title", "phone_prefix", "phone_number", "email"
+      ]) {
+        const field = form.elements.namedItem(key);
+        if (field) field.value = data[key] || "";
+      }
+      const consent = form.elements.namedItem("consent_at");
+      if (consent) consent.value = data.consent_at ? String(data.consent_at).slice(0, 16) : "";
+      savedPreview = null;
+      renderStrip();
+    }
+
+    function renderPeople(people) {
+      peopleCount.textContent = `${people.length} resultado${people.length === 1 ? "" : "s"}`;
+      if (!people.length) {
+        peopleResults.innerHTML = '<div class="people-empty">No hay personas que coincidan.</div>';
+        return;
+      }
+      peopleResults.innerHTML = people.map(person => {
+        const fullName = [person.first_name, person.paternal_surname, person.maternal_surname]
+          .filter(Boolean).join(" ");
+        const meta = [person.company, person.email, person.phone_number].filter(Boolean).join(" · ");
+        const action = person.print_state === "printed" ? "Reimprimir" : "Imprimir";
+        return `
+          <article class="person-row" data-person-id="${escapeHtml(person.id)}">
+            <span>
+              <span class="person-name">${escapeHtml(fullName || "Sin nombre")}</span>
+              <span class="person-meta">${escapeHtml(meta || "Sin datos adicionales")}</span>
+            </span>
+            <span class="person-actions">
+              <button type="button" class="load-person" data-action="load">Ver</button>
+              <button type="button" data-action="print">${action}</button>
+            </span>
+          </article>`;
+      }).join("");
+      for (const row of peopleResults.querySelectorAll(".person-row")) {
+        const person = people.find(item => String(item.id) === row.dataset.personId);
+        row.querySelector('[data-action="load"]').addEventListener("click", () => fillForm(person));
+        row.querySelector('[data-action="print"]').addEventListener("click", () => printPerson(person));
+      }
+    }
+
+    async function loadPeople() {
+      if (sending) return;
+      if (peopleRequest) peopleRequest.abort();
+      peopleRequest = new AbortController();
+      const params = new URLSearchParams({
+        search: peopleSearch.value.trim(),
+        status: peopleStatus,
+        limit: "30"
+      });
+      try {
+        const response = await fetch(`/people?${params}`, { signal: peopleRequest.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(errorMessage(data, "No se pudieron consultar las personas"));
+        renderPeople(data.people);
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        peopleCount.textContent = "Sin conexion";
+        peopleResults.innerHTML = `<div class="people-empty">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function printPerson(person) {
+      sending = true;
+      peopleResults.querySelectorAll("button").forEach(button => { button.disabled = true; });
+      status.className = "";
+      status.textContent = simulationMode.checked ? "Simulando impresion manual..." : "Enviando impresion manual...";
+      try {
+        const response = await fetch(`/people/${encodeURIComponent(person.id)}/print`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            simulate: simulationMode.checked,
+            printer_name: printer.value || null
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(errorMessage(result, "No se pudo imprimir la persona"));
+        if (currentStripId !== result.strip_id) {
+          printedSlots.fill(null);
+          currentStripId = result.strip_id;
+        }
+        printedSlots[result.position - 1] = { ...person, id: result.id };
+        targetPosition.value = String(result.next_position);
+        renderStrip();
+        status.className = "success";
+        status.textContent = result.simulated
+          ? `Simulacion manual asignada a la posicion ${result.position}.`
+          : `Persona enviada a imprimir en la posicion ${result.position}.`;
+      } catch (error) {
+        status.className = "error";
+        status.textContent = error.message;
+      } finally {
+        sending = false;
+        loadPeople();
+      }
+    }
+
     async function saveForm() {
       const response = await fetch("/forms", {
         method: "POST",
@@ -513,6 +706,36 @@
         renderStrip();
       } catch (_) {
         // La vista local sigue funcionando aunque falle la sincronizacion temporal.
+      }
+    }
+
+    async function loadPrintLayout() {
+      try {
+        const response = await fetch("/print-layout");
+        if (!response.ok) return;
+        const layout = await response.json();
+        strip.style.aspectRatio = `${layout.paper_width_mm} / ${layout.paper_height_mm}`;
+        sheetDimensions.textContent = `${String(layout.paper_width_mm).replace(".", ",")} × ${String(layout.paper_height_mm).replace(".", ",")} mm`;
+        const separation = (layout.paper_height_mm - layout.badge_height_mm * 3) / 4;
+        for (const slot of slots) {
+          const position = Number(slot.dataset.position);
+          const physicalPosition = 4 - position;
+          const x = (
+            (layout.paper_width_mm - layout.badge_width_mm) / 2
+            + layout.global_offset_x_mm
+          );
+          const y = (
+            separation * physicalPosition
+            + layout.badge_height_mm * (physicalPosition - 1)
+            + layout.global_offset_y_mm
+          );
+          slot.style.left = `${x / layout.paper_width_mm * 100}%`;
+          slot.style.top = `${y / layout.paper_height_mm * 100}%`;
+          slot.style.width = `${layout.badge_width_mm / layout.paper_width_mm * 100}%`;
+          slot.style.height = `${layout.badge_height_mm / layout.paper_height_mm * 100}%`;
+        }
+      } catch (_) {
+        // Conserva las medidas predeterminadas si la configuracion no esta disponible.
       }
     }
 
@@ -558,6 +781,19 @@
     });
 
     simulationMode.addEventListener("change", updateMode);
+
+    peopleSearch.addEventListener("input", () => {
+      clearTimeout(peopleTimer);
+      peopleTimer = setTimeout(loadPeople, 250);
+    });
+
+    for (const tab of peopleTabs) {
+      tab.addEventListener("click", () => {
+        peopleStatus = tab.dataset.peopleStatus;
+        peopleTabs.forEach(item => item.classList.toggle("active", item === tab));
+        loadPeople();
+      });
+    }
 
     saveButton.addEventListener("click", async () => {
       if (!form.reportValidity()) return;
@@ -651,7 +887,10 @@
     updateMode();
     renderStrip();
     loadPrintState();
+    loadPrintLayout();
+    loadPeople();
     setInterval(loadPrintState, 2000);
+    setInterval(loadPeople, 3000);
   </script>
 </body>
 </html>

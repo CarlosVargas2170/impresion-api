@@ -456,6 +456,42 @@ class ImpresionAutomaticaEnviada(BaseModel):
     view_url: str = Field(description="Vista publica del formulario guardado.")
 
 
+class PersonaParaImpresion(BaseModel):
+    id: str
+    first_name: str | None = None
+    paternal_surname: str | None = None
+    maternal_surname: str | None = None
+    description: str | None = None
+    company: str | None = None
+    job_title: str | None = None
+    phone_prefix: str | None = None
+    phone_number: str | None = None
+    email: str | None = None
+    consent_at: datetime | None = None
+    print_state: Literal["pending", "printed"]
+    printed_at: datetime | None = None
+    print_error: str | None = None
+
+
+class ListaPersonasParaImpresion(BaseModel):
+    people: list[PersonaParaImpresion]
+    count: int
+
+
+class ImpresionManualPersona(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    simulate: bool = True
+    printer_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("printer_name", mode="before")
+    @classmethod
+    def limpiar_impresora(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return None
+        return value.strip() or None
+
+
 class RespuestaError(BaseModel):
     detail: str = Field(description="Descripcion del error.")
 
@@ -1444,6 +1480,106 @@ def listar_impresoras() -> dict[str, list[str] | str | None]:
             status_code=503,
             detail=f"No se pudieron consultar las impresoras: {error}",
         ) from error
+
+
+@app.get(
+    "/people",
+    tags=["Impresion"],
+    summary="Buscar personas pendientes o impresas",
+    description=(
+        "Consulta en tiempo real la tabla persons de PostgreSQL para alimentar el "
+        "buscador de impresion manual."
+    ),
+    response_model=ListaPersonasParaImpresion,
+    responses={503: {"model": RespuestaError, "description": "PostgreSQL no esta disponible."}},
+    operation_id="buscar_personas_para_impresion",
+)
+def buscar_personas_para_impresion(
+    search: Annotated[str, Query(max_length=100)] = "",
+    status_filter: Annotated[
+        Literal["all", "pending", "printed"],
+        Query(alias="status"),
+    ] = "all",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> dict[str, object]:
+    try:
+        from print_worker import ColaImpresionPostgres, cargar_url_postgres
+
+        cola = ColaImpresionPostgres(cargar_url_postgres())
+        personas = cola.buscar_personas(search, status_filter, limit)
+        for persona in personas:
+            persona["id"] = str(persona["id"])
+        return {"people": personas, "count": len(personas)}
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No se pudieron consultar las personas: {error}",
+        ) from error
+
+
+@app.post(
+    "/people/{person_id}/print",
+    tags=["Impresion"],
+    summary="Imprimir manualmente una persona",
+    description=(
+        "Reserva de forma atomica una persona pendiente o ya impresa, genera su "
+        "gafete en la siguiente posicion de la tira y actualiza su estado en PostgreSQL."
+    ),
+    response_model=ImpresionAutomaticaEnviada,
+    responses={
+        409: {"model": RespuestaError, "description": "La persona ya esta siendo procesada."},
+        503: {"model": RespuestaError, "description": "PostgreSQL no esta disponible."},
+    },
+    operation_id="imprimir_persona_manualmente",
+)
+def imprimir_persona_manualmente(
+    person_id: Annotated[str, PathParameter(description="Identificador de persons.")],
+    solicitud: ImpresionManualPersona,
+) -> dict[str, bool | int | str | None]:
+    from print_worker import (
+        ColaImpresionPostgres,
+        cargar_url_postgres,
+        descripcion_error,
+        formulario_desde_persona,
+    )
+
+    try:
+        cola = ColaImpresionPostgres(cargar_url_postgres())
+        persona = cola.reclamar_persona(person_id)
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No se pudo reservar la persona: {error}",
+        ) from error
+
+    if persona is None:
+        raise HTTPException(
+            status_code=409,
+            detail="La persona no existe, esta inactiva o ya esta siendo procesada",
+        )
+
+    formulario = formulario_desde_persona(persona, solicitud.printer_name)
+    claimed_person_id = persona["id"]
+    try:
+        resultado = procesar_impresion(formulario, simulate=solicitud.simulate)
+    except Exception as error:
+        try:
+            cola.marcar_fallida(claimed_person_id, descripcion_error(error))
+        except Exception:
+            pass
+        raise
+
+    try:
+        cola.marcar_impresa(claimed_person_id)
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "El trabajo se proceso, pero no se pudo confirmar como impreso en "
+                f"PostgreSQL: {error}"
+            ),
+        ) from error
+    return resultado
 
 
 @app.get(
