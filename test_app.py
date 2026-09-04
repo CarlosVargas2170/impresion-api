@@ -251,8 +251,8 @@ class ImpresionTests(unittest.TestCase):
         resultado = imprimir_windows(
             self.imagen_prueba(),
             "EPSON L3310 Series",
-            107.95,
-            279.4,
+            107,
+            278,
         )
 
         self.assertEqual(resultado, "EPSON L3310 Series")
@@ -262,7 +262,7 @@ class ImpresionTests(unittest.TestCase):
         self.assertGreater(destino[0], 0)
         self.assertAlmostEqual(
             destino[2] - destino[0],
-            api.mm_a_px(107.95),
+            api.mm_a_px(107),
             delta=1,
         )
         dc.EndDoc.assert_called_once_with()
@@ -290,16 +290,17 @@ class ImpresionTiraTests(unittest.TestCase):
             api.mm_a_px(configuracion.paper_height_mm),
         )
         self.assertTrue(all(imagen.size == tamano_esperado for imagen in imagenes))
-        self.assertEqual(configuracion.badge_height_mm, 80)
-        self.assertAlmostEqual(
-            (
-                configuracion.paper_height_mm
-                - configuracion.badge_height_mm * 3
-            )
-            / 4,
-            9.85,
+        self.assertEqual(configuracion.paper_width_mm, 107)
+        self.assertEqual(configuracion.paper_height_mm, 278)
+        self.assertEqual(configuracion.badge_width_mm, 102)
+        self.assertEqual(configuracion.badge_height_mm, 84)
+        self.assertEqual(configuracion.outer_margin_y_mm, 13)
+        self.assertEqual(configuracion.global_offset_y_mm, 0)
+        self.assertEqual(
+            configuracion.outer_margin_y_mm * 2
+            + configuracion.badge_height_mm * 3,
+            configuracion.paper_height_mm,
         )
-        self.assertEqual(configuracion.global_offset_y_mm, -1)
 
         cajas = [self.contenido_impreso(imagen) for imagen in imagenes]
         self.assertTrue(all(caja is not None for caja in cajas))
@@ -322,6 +323,10 @@ class ImpresionTiraTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ConfiguracionTira(paper_height_mm=240, badge_height_mm=85)
 
+    def test_rechaza_una_distribucion_con_espacios_entre_cuadros(self):
+        with self.assertRaisesRegex(ValidationError, "unidos, sin espacios"):
+            ConfiguracionTira(paper_height_mm=279)
+
     def test_padding_desplaza_el_contenido_hacia_la_derecha(self):
         sin_padding = generar_imagen_tira(
             self.formulario(),
@@ -340,7 +345,7 @@ class ImpresionTiraTests(unittest.TestCase):
         caja_con_padding = self.contenido_impreso(con_padding)
         self.assertGreater(caja_con_padding[0], caja_sin_padding[0])
 
-    def test_padding_disminuye_gradualmente_de_posicion_1_a_3(self):
+    def test_margen_y_centro_horizontal_son_iguales_en_las_tres_posiciones(self):
         configuracion = ConfiguracionTira()
         cajas = {
             posicion: self.contenido_impreso(
@@ -354,15 +359,25 @@ class ImpresionTiraTests(unittest.TestCase):
             for posicion in (1, 2, 3)
         }
 
-        self.assertGreater(cajas[1][0], cajas[2][0])
-        self.assertGreater(cajas[2][0], cajas[3][0])
+        self.assertEqual(cajas[1][0], cajas[2][0])
+        self.assertEqual(cajas[2][0], cajas[3][0])
+        self.assertEqual(cajas[1][2], cajas[2][2])
+        self.assertEqual(cajas[2][2], cajas[3][2])
+        self.assertEqual(
+            cajas[1][1] - cajas[2][1],
+            api.mm_a_px(configuracion.badge_height_mm),
+        )
+        self.assertEqual(
+            cajas[2][1] - cajas[3][1],
+            api.mm_a_px(configuracion.badge_height_mm),
+        )
         self.assertEqual(
             api.padding_formulario_mm(1, configuracion.form_padding_left_mm),
-            10,
+            6,
         )
         self.assertEqual(
             api.padding_formulario_mm(2, configuracion.form_padding_left_mm),
-            8,
+            6,
         )
         self.assertEqual(
             api.padding_formulario_mm(3, configuracion.form_padding_left_mm),
@@ -393,7 +408,7 @@ class ImpresionTiraTests(unittest.TestCase):
         self.assertEqual(respuesta["position"], 1)
         argumentos = imprimir.call_args.args
         self.assertEqual(argumentos[1], "EPSON L3310 Series")
-        self.assertEqual(argumentos[2:], (107.95, 279.4))
+        self.assertEqual(argumentos[2:], (107, 278))
 
     @patch("app.imprimir_windows")
     def test_post_print_solo_asigna_posicion_configurada_y_abre_otra_tira(self, imprimir):

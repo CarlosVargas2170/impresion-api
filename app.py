@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -300,36 +301,51 @@ class ConfiguracionTira(BaseModel):
         extra="forbid",
         json_schema_extra={
             "example": {
-                "paper_width_mm": 107.95,
-                "paper_height_mm": 300,
-                "badge_width_mm": 100,
-                "badge_height_mm": 80,
+                "paper_width_mm": 107,
+                "paper_height_mm": 278,
+                "badge_width_mm": 102,
+                "badge_height_mm": 84,
+                "outer_margin_y_mm": 13,
                 "form_padding_left_mm": 6,
                 "global_offset_x_mm": 0,
-                "global_offset_y_mm": -1,
+                "global_offset_y_mm": 0,
             }
         },
     )
 
-    paper_width_mm: float = Field(default=107.95, gt=50, le=220, description="Ancho fisico de la tira en milimetros.")
-    paper_height_mm: float = Field(default=279.4, gt=100, le=500, description="Alto fisico de la tira en milimetros.")
-    badge_width_mm: float = Field(default=100, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
-    badge_height_mm: float = Field(default=80, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
+    paper_width_mm: float = Field(default=107, gt=50, le=220, description="Ancho fisico de la tira en milimetros.")
+    paper_height_mm: float = Field(default=278, gt=100, le=500, description="Alto fisico de la tira en milimetros.")
+    badge_width_mm: float = Field(default=102, gt=20, le=220, description="Ancho de cada cuadro luego de girar el formulario.")
+    badge_height_mm: float = Field(default=84, gt=20, le=160, description="Alto ocupado por cada una de las tres posiciones.")
+    outer_margin_y_mm: float = Field(
+        default=13,
+        ge=0,
+        le=100,
+        description="Margen superior e inferior; los tres cuadros quedan unidos.",
+    )
     form_padding_left_mm: float = Field(
         default=6,
         ge=0,
         le=15,
-        description="Margen interno que desplaza el contenido del gafete hacia la derecha.",
+        description="Margen interno simetrico entre los datos y el borde del cuadro.",
     )
     global_offset_x_mm: float = Field(default=0, ge=-30, le=30, description="Correccion horizontal aplicada a todos los trabajos.")
-    global_offset_y_mm: float = Field(default=-1, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
+    global_offset_y_mm: float = Field(default=0, ge=-30, le=30, description="Correccion vertical aplicada a todos los trabajos.")
 
     @model_validator(mode="after")
     def validar_distribucion(self) -> "ConfiguracionTira":
         if self.badge_width_mm > self.paper_width_mm:
             raise ValueError("El ancho del gafete no puede superar el ancho de la tira")
-        if self.badge_height_mm * 3 > self.paper_height_mm:
-            raise ValueError("Los tres gafetes no caben en el alto de la tira")
+        alto_distribuido = self.outer_margin_y_mm * 2 + self.badge_height_mm * 3
+        if not math.isclose(alto_distribuido, self.paper_height_mm, abs_tol=0.01):
+            raise ValueError(
+                "El alto debe ser igual a dos margenes exteriores mas tres cuadros "
+                "unidos, sin espacios"
+            )
+        if self.form_padding_left_mm * 2 >= min(
+            self.badge_width_mm, self.badge_height_mm
+        ):
+            raise ValueError("El margen interno no deja espacio para los datos")
         return self
 
 
@@ -1136,7 +1152,6 @@ QR_TAMANO_MM = 17
 QR_MARGEN_INFERIOR_MM = 6
 QR_MARGEN_DERECHO_MM = 2
 QR_DESPLAZAMIENTO_ARRIBA_MM = 3
-PADDING_ADICIONAL_POR_POSICION_MM = {1: 4, 2: 2, 3: 0}
 FUENTE_REGULAR = Path("C:/Windows/Fonts/arial.ttf")
 FUENTE_NEGRITA = Path("C:/Windows/Fonts/arialbd.ttf")
 
@@ -1167,9 +1182,11 @@ def mm_a_px(milimetros: float) -> int:
 
 
 def padding_formulario_mm(position: int, padding_base_mm: float) -> float:
-    """Aumenta gradualmente el margen izquierdo desde la posicion 3 a la 1."""
+    """Devuelve el mismo margen interno para las tres posiciones."""
 
-    return padding_base_mm + PADDING_ADICIONAL_POR_POSICION_MM[position]
+    if position not in (1, 2, 3):
+        raise ValueError("La posicion debe ser 1, 2 o 3")
+    return padding_base_mm
 
 
 def puntos_a_px(puntos: float) -> int:
@@ -1316,33 +1333,30 @@ def generar_imagen_tira(
     izquierda = (pagina.width - ancho_sticker) // 2
     gafete = pagina.crop((izquierda, 0, izquierda + ancho_sticker, pagina.height))
     gafete = gafete.rotate(90, expand=True)
-    gafete = gafete.resize(
+    ancho_gafete = mm_a_px(configuracion.badge_width_mm)
+    alto_gafete = mm_a_px(configuracion.badge_height_mm)
+    margen_interno = mm_a_px(
+        padding_formulario_mm(position, configuracion.form_padding_left_mm)
+    )
+    contenido = gafete.resize(
         (
-            mm_a_px(configuracion.badge_width_mm),
-            mm_a_px(configuracion.badge_height_mm),
+            ancho_gafete - margen_interno * 2,
+            alto_gafete - margen_interno * 2,
         ),
         Image.Resampling.LANCZOS,
     )
-    padding_izquierdo = mm_a_px(
-        padding_formulario_mm(position, configuracion.form_padding_left_mm)
-    )
-    if padding_izquierdo:
-        contenido_desplazado = Image.new("RGB", gafete.size, "white")
-        contenido_desplazado.paste(gafete, (padding_izquierdo, 0))
-        gafete = contenido_desplazado
+    gafete = Image.new("RGB", (ancho_gafete, alto_gafete), "white")
+    gafete.paste(contenido, (margen_interno, margen_interno))
 
-    # El QR se agrega despues del padding para que nunca se recorte en la posicion 1.
+    # El QR respeta el mismo margen interno en todas las posiciones.
     codigo_qr = generar_codigo_qr(url_networking(data))
-    qr_x = gafete.width - codigo_qr.width - mm_a_px(QR_MARGEN_DERECHO_MM)
+    qr_x = gafete.width - codigo_qr.width - margen_interno
     qr_y = (
         (gafete.height - codigo_qr.height) // 2
         - mm_a_px(QR_DESPLAZAMIENTO_ARRIBA_MM)
     )
     gafete.paste(codigo_qr, (qr_x, qr_y))
 
-    separacion = (
-        configuracion.paper_height_mm - configuracion.badge_height_mm * 3
-    ) / 4
     x_mm = (
         (configuracion.paper_width_mm - configuracion.badge_width_mm) / 2
         + configuracion.global_offset_x_mm
@@ -1350,7 +1364,7 @@ def generar_imagen_tira(
     )
     posicion_fisica = 4 - position
     y_mm = (
-        separacion * posicion_fisica
+        configuracion.outer_margin_y_mm
         + configuracion.badge_height_mm * (posicion_fisica - 1)
         + configuracion.global_offset_y_mm
         + offset_y_mm

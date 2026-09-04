@@ -139,7 +139,7 @@
     .preview-label { width: 100%; display: flex; justify-content: space-between; color: #596663; font-size: 9px; font-weight: 700; text-transform: uppercase; }
     .strip {
       width: min(100%, 270px);
-      aspect-ratio: 107.95 / 279.4;
+      aspect-ratio: 107 / 278;
       position: relative;
       background: #fff;
       border: 1px solid #cbd3d0;
@@ -147,9 +147,9 @@
     }
     .strip-slot {
       position: absolute;
-      left: 3.68%;
-      width: 92.64%;
-      height: 28.63%;
+      left: 2.34%;
+      width: 95.33%;
+      height: 30.22%;
       padding: 8px;
       overflow: hidden;
       color: #17201f;
@@ -158,16 +158,16 @@
       border-radius: 3px;
       font-family: Arial, Helvetica, sans-serif;
     }
-    .strip-slot[data-position="1"] { top: 3.17%; --position-offset-x: 3.7%; }
-    .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
-    .strip-slot[data-position="3"] { top: 67.48%; --position-offset-x: 0%; }
+    .strip-slot[data-position="1"] { top: 4.68%; }
+    .strip-slot[data-position="2"] { top: 34.89%; }
+    .strip-slot[data-position="3"] { top: 65.11%; }
     .strip-slot.active { background: #f4fbf8; border: 2px solid #087d6b; box-shadow: 0 0 0 3px rgb(8 125 107 / 12%); }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
     .slot-number { position: absolute; top: 5px; right: 6px; z-index: 2; color: #71807c; font: 700 9px/1 system-ui, sans-serif; text-transform: uppercase; }
     .badge-preview {
       position: absolute;
       top: calc(50% - 2px);
-      left: calc(50% + var(--position-offset-x, 0%));
+      left: 50%;
       width: 68%;
       height: 112%;
       display: flex;
@@ -373,7 +373,7 @@
       </div>
     </section>
     <aside class="preview-area" aria-label="Vista previa de la tira">
-      <div class="preview-label"><span>Tira vertical</span><span id="dimensions">107,95 × 279,4 mm</span></div>
+      <div class="preview-label"><span>Tira vertical</span><span id="dimensions">107 × 278 mm</span></div>
       <div id="strip" class="strip">
         <button class="strip-slot" type="button" data-position="1"><span class="slot-number">Posición 1</span><span class="badge-preview"><span class="badge-empty">Disponible</span></span></button>
         <button class="strip-slot active" type="button" data-position="2"><span class="slot-number">Posición 2</span><span class="badge-preview"><span class="badge-empty">Selecciona persona</span></span></button>
@@ -689,12 +689,11 @@
         const layout = await response.json();
         strip.style.aspectRatio = `${layout.paper_width_mm} / ${layout.paper_height_mm}`;
         dimensions.textContent = `${String(layout.paper_width_mm).replace(".", ",")} × ${String(layout.paper_height_mm).replace(".", ",")} mm`;
-        const gap = (layout.paper_height_mm - layout.badge_height_mm * 3) / 4;
         for (const slot of slots) {
           const value = Number(slot.dataset.position);
           const physical = value;
           const x = (layout.paper_width_mm - layout.badge_width_mm) / 2 + layout.global_offset_x_mm;
-          const y = gap * physical + layout.badge_height_mm * (physical - 1) + layout.global_offset_y_mm;
+          const y = layout.outer_margin_y_mm + layout.badge_height_mm * (physical - 1) + layout.global_offset_y_mm;
           slot.style.left = `${x / layout.paper_width_mm * 100}%`;
           slot.style.top = `${y / layout.paper_height_mm * 100}%`;
           slot.style.width = `${layout.badge_width_mm / layout.paper_width_mm * 100}%`;

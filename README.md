@@ -8,13 +8,13 @@ Cada trabajo usa la posición 2 central. Las posiciones 1 y 3 se ignoran y el
 siguiente trabajo comienza una tira nueva.
 
 La configuración de la tira incluye `form_padding_left_mm`, con `6 mm` por defecto,
-para separar el contenido del borde izquierdo. Puede ajustarse mediante `PUT /print-layout`
-sin desplazar la hoja completa.
+como margen interno simétrico entre los datos y el borde de cada formulario. Se aplica
+exactamente igual en las tres posiciones y puede ajustarse mediante `PUT /print-layout`.
 
-Cada posición ocupa `80 mm` de alto. En la tira de `279,4 mm`, esto deja una
-separación uniforme de `9,85 mm` antes, entre y después de los tres formularios.
-Los tres formularios reciben además un desplazamiento vertical global de `-1 mm`
-(hacia arriba); por eso quedan `8,85 mm` arriba y `10,85 mm` abajo.
+La tira mide `107 × 278 mm`. Cada posición mide `102 × 84 mm`; los tres
+formularios están unidos verticalmente y dejan `13 mm` en los extremos superior e
+inferior. La validación exige que `2 × margen + 3 × alto del formulario` coincida
+con el alto de la tira, para impedir separaciones o desplazamientos acumulativos.
 
 ## Dominio usado por los códigos QR
 

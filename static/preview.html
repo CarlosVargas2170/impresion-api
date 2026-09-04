@@ -255,7 +255,7 @@
 
     .strip {
       width: min(100%, 270px);
-      aspect-ratio: 107.95 / 279.4;
+      aspect-ratio: 107 / 278;
       position: relative;
       background: #fff;
       border: 1px solid #cbd3d0;
@@ -283,11 +283,10 @@
     }
     .strip-slot.printed { border-style: solid; border-color: #8e9c98; }
 
-    /* Equivale a +4 mm para la posicion 1 y +2 mm para la posicion 2. */
-    .strip-slot[data-position="1"] { top: 67.48%; --position-offset-x: 3.7%; }
-    .strip-slot[data-position="2"] { top: 35.33%; --position-offset-x: 1.85%; }
-    .strip-slot[data-position="3"] { top: 3.17%; --position-offset-x: 0%; }
-    .strip-slot[data-position] { left: 3.68%; width: 92.64%; height: 28.63%; }
+    .strip-slot[data-position="1"] { top: 65.11%; }
+    .strip-slot[data-position="2"] { top: 34.89%; }
+    .strip-slot[data-position="3"] { top: 4.68%; }
+    .strip-slot[data-position] { left: 2.34%; width: 95.33%; height: 30.22%; }
 
     .slot-number {
       position: absolute;
@@ -303,7 +302,7 @@
     .badge-preview {
       position: absolute;
       top: calc(50% - 2px);
-      left: calc(50% + var(--position-offset-x, 0%));
+      left: 50%;
       width: 68%;
       height: 112%;
       display: flex;
@@ -483,7 +482,7 @@
     </section>
 
     <aside class="preview-area" aria-label="Vista previa del papel">
-      <div class="preview-label"><span>Tira vertical</span><span id="sheetDimensions">107,95 × 279,4 mm</span></div>
+      <div class="preview-label"><span>Tira vertical</span><span id="sheetDimensions">107 × 278 mm</span></div>
       <div class="sheet-summary">Automatico: posicion 3 · Manual: posicion libre</div>
       <div id="strip" class="strip" aria-label="Media hoja Carta con tres posiciones">
         <button class="strip-slot" type="button" data-position="3" aria-label="Posicion 3">
@@ -740,7 +739,6 @@
         const layout = await response.json();
         strip.style.aspectRatio = `${layout.paper_width_mm} / ${layout.paper_height_mm}`;
         sheetDimensions.textContent = `${String(layout.paper_width_mm).replace(".", ",")} × ${String(layout.paper_height_mm).replace(".", ",")} mm`;
-        const separation = (layout.paper_height_mm - layout.badge_height_mm * 3) / 4;
         for (const slot of slots) {
           const position = Number(slot.dataset.position);
           const physicalPosition = 4 - position;
@@ -749,7 +747,7 @@
             + layout.global_offset_x_mm
           );
           const y = (
-            separation * physicalPosition
+            layout.outer_margin_y_mm
             + layout.badge_height_mm * (physicalPosition - 1)
             + layout.global_offset_y_mm
           );
