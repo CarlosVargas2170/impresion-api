@@ -428,6 +428,10 @@
     let savedPreview = null;
     let currentStripId = null;
     let sending = false;
+    const uppercaseFields = new Set([
+      "first_name", "paternal_surname", "maternal_surname",
+      "company", "job_title", "description"
+    ]);
 
     function payload() {
       const data = Object.fromEntries(new FormData(form).entries());
@@ -537,7 +541,18 @@
       }
     }
 
-    form.addEventListener("input", () => {
+    form.addEventListener("input", (event) => {
+      if (uppercaseFields.has(event.target.name)) {
+        const selectionStart = event.target.selectionStart;
+        const selectionEnd = event.target.selectionEnd;
+        event.target.value = event.target.value.toLocaleUpperCase("es");
+        event.target.setSelectionRange(selectionStart, selectionEnd);
+      } else if (event.target.name === "email") {
+        const selectionStart = event.target.selectionStart;
+        const selectionEnd = event.target.selectionEnd;
+        event.target.value = event.target.value.toLocaleLowerCase("es");
+        event.target.setSelectionRange(selectionStart, selectionEnd);
+      }
       savedPreview = null;
       renderStrip();
     });

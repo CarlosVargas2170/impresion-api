@@ -196,7 +196,7 @@ class Formulario(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("El campo no puede estar vacio")
-        return value
+        return value.upper()
 
     @field_validator(
         "maternal_surname",
@@ -205,7 +205,6 @@ class Formulario(BaseModel):
         "job_title",
         "phone_prefix",
         "phone_number",
-        "email",
         "printer_name",
         mode="before",
     )
@@ -214,6 +213,18 @@ class Formulario(BaseModel):
         if not isinstance(value, str):
             return None
         return value.strip() or None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def limpiar_correo(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return None
+        return value.strip().lower() or None
+
+    @field_validator("maternal_surname", "description", "company", "job_title")
+    @classmethod
+    def convertir_texto_a_mayusculas(cls, value: str | None) -> str | None:
+        return value.upper() if value is not None else None
 
 
 class EstadoServicio(BaseModel):
@@ -605,7 +616,7 @@ def formulario_desde_registro(registro: dict[str, object]) -> Formulario:
     return Formulario.model_validate(datos)
 
 
-POSICION_IMPRESION = 2
+POSICION_IMPRESION = 3
 
 
 def _crear_tira(

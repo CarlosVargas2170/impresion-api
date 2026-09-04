@@ -26,12 +26,12 @@ from app import (
 class FormularioTests(unittest.TestCase):
     def datos_validos(self, **cambios):
         datos = {
-            "first_name": "Ana",
-            "paternal_surname": "Perez",
-            "maternal_surname": "Lopez",
-            "description": "Invitada VIP",
-            "company": "Nexus",
-            "job_title": "Gerente comercial",
+            "first_name": "ANA",
+            "paternal_surname": "PEREZ",
+            "maternal_surname": "LOPEZ",
+            "description": "INVITADA VIP",
+            "company": "NEXUS",
+            "job_title": "GERENTE COMERCIAL",
             "phone_prefix": "+591",
             "phone_number": "71234567",
             "email": "ana.perez@ejemplo.com",
@@ -44,10 +44,10 @@ class FormularioTests(unittest.TestCase):
         texto = generar_formulario(Formulario(**self.datos_validos()))
 
         lineas = texto.splitlines()
-        self.assertEqual(lineas[0].strip(), "Ana")
-        self.assertEqual(lineas[1].strip(), "Perez Lopez")
-        self.assertEqual(lineas[2].strip(), "Nexus")
-        self.assertEqual(lineas[3].strip(), "Gerente comercial")
+        self.assertEqual(lineas[0].strip(), "ANA")
+        self.assertEqual(lineas[1].strip(), "PEREZ LOPEZ")
+        self.assertEqual(lineas[2].strip(), "NEXUS")
+        self.assertEqual(lineas[3].strip(), "GERENTE COMERCIAL")
         self.assertEqual(lineas[4], "")
         self.assertEqual(lineas[5].strip(), "ana.perez@ejemplo.com")
         self.assertNotIn("NOMBRE", texto)
@@ -69,8 +69,29 @@ class FormularioTests(unittest.TestCase):
         texto = generar_formulario(formulario)
 
         self.assertIsNone(formulario.maternal_surname)
-        self.assertEqual(texto.splitlines()[1].strip(), "Perez")
-        self.assertNotIn("Nexus", texto)
+        self.assertEqual(texto.splitlines()[1].strip(), "PEREZ")
+        self.assertNotIn("NEXUS", texto)
+
+    def test_convierte_texto_a_mayusculas_excepto_correo(self):
+        formulario = Formulario(
+            **self.datos_validos(
+                first_name="  Ana María ",
+                paternal_surname="Pérez",
+                maternal_surname="López",
+                description="Invitada vip",
+                company="Nexus Tech",
+                job_title="Gerente comercial",
+                email="Ana.Perez@Ejemplo.com",
+            )
+        )
+
+        self.assertEqual(formulario.first_name, "ANA MARÍA")
+        self.assertEqual(formulario.paternal_surname, "PÉREZ")
+        self.assertEqual(formulario.maternal_surname, "LÓPEZ")
+        self.assertEqual(formulario.description, "INVITADA VIP")
+        self.assertEqual(formulario.company, "NEXUS TECH")
+        self.assertEqual(formulario.job_title, "GERENTE COMERCIAL")
+        self.assertEqual(str(formulario.email), "ana.perez@ejemplo.com")
 
     def test_rechaza_correo_invalido(self):
         with self.assertRaises(ValidationError):
@@ -111,8 +132,8 @@ class FormularioTests(unittest.TestCase):
 
         generar_qr.assert_called_once_with(
             "https://www.expoteleinfo.com/networking?"
-            "nombre=Ana&apellido=Perez+Lopez&telefono=%2B59171234567&"
-            "email=ana.perez%40ejemplo.com&cargo=Gerente+comercial&empresa=Nexus"
+            "nombre=ANA&apellido=PEREZ+LOPEZ&telefono=%2B59171234567&"
+            "email=ana.perez%40ejemplo.com&cargo=GERENTE+COMERCIAL&empresa=NEXUS"
         )
 
     def test_url_networking_usa_y_codifica_los_valores_del_formulario(self):
@@ -129,9 +150,9 @@ class FormularioTests(unittest.TestCase):
         self.assertEqual(
             url_networking(formulario),
             "https://www.expoteleinfo.com/networking?"
-            "nombre=Mar%C3%ADa+Jos%C3%A9&apellido=N%C3%BA%C3%B1ez+D%27Angelo&"
+            "nombre=MAR%C3%8DA+JOS%C3%89&apellido=N%C3%9A%C3%91EZ+D%27ANGELO&"
             "telefono=%2B59171234567&email=ana.perez%40ejemplo.com&"
-            "cargo=I%2BD&empresa=Nexus+%26+Asociados",
+            "cargo=I%2BD&empresa=NEXUS+%26+ASOCIADOS",
         )
 
     def test_url_networking_incluye_campos_opcionales_vacios(self):
@@ -149,7 +170,7 @@ class FormularioTests(unittest.TestCase):
         self.assertEqual(
             url_networking(formulario),
             "https://www.expoteleinfo.com/networking?"
-            "nombre=Ana&apellido=Perez&telefono=&email=&cargo=&empresa=",
+            "nombre=ANA&apellido=PEREZ&telefono=&email=&cargo=&empresa=",
         )
 
     def test_codigo_qr_tiene_el_tamano_configurado(self):
@@ -490,7 +511,7 @@ class AlmacenamientoTests(unittest.TestCase):
 
                 formulario = api.obtener_formulario(form_id)
                 self.assertIsNotNone(formulario)
-                self.assertEqual(formulario["first_name"], "Ana")
+                self.assertEqual(formulario["first_name"], "ANA")
                 self.assertEqual(formulario["created_at"], creado)
 
                 respuesta = api.qr_formulario(form_id)
