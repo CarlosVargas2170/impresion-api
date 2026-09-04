@@ -79,15 +79,21 @@ SELECT
     phone_number,
     email,
     consent_at,
-    CASE WHEN printed_at IS NOT NULL THEN 'printed' ELSE 'pending' END AS print_state,
+    CASE
+        WHEN pending_to_print = 1 AND printed_at IS NULL THEN 'processing'
+        WHEN printed_at IS NOT NULL THEN 'printed'
+        ELSE 'pending'
+    END AS print_state,
+    print_claimed_at,
     printed_at,
     print_error
 FROM persons
 WHERE is_active = TRUE
   AND (
-      (%s = 'pending' AND pending_to_print = 0)
+      %s = 'all'
+      OR (%s = 'pending' AND pending_to_print = 0 AND printed_at IS NULL)
+      OR (%s = 'processing' AND pending_to_print = 1 AND printed_at IS NULL)
       OR (%s = 'printed' AND printed_at IS NOT NULL)
-      OR (%s = 'all' AND (pending_to_print = 0 OR printed_at IS NOT NULL))
   )
   AND (
       %s = ''
@@ -101,6 +107,29 @@ ORDER BY
     COALESCE(printed_at, created_at) DESC,
     id DESC
 LIMIT %s
+OFFSET %s
+"""
+
+COUNT_PEOPLE_SQL = """
+SELECT
+    COUNT(*) FILTER (
+        WHERE pending_to_print = 0 AND printed_at IS NULL
+    )::int AS pending,
+    COUNT(*) FILTER (
+        WHERE pending_to_print = 1 AND printed_at IS NULL
+    )::int AS processing,
+    COUNT(*) FILTER (
+        WHERE printed_at IS NOT NULL
+    )::int AS printed
+FROM persons
+WHERE is_active = TRUE
+  AND (
+      %s = ''
+      OR concat_ws(
+          ' ', first_name, paternal_surname, maternal_surname,
+          company, job_title, email, phone_number
+      ) ILIKE %s
+  )
 """
 
 CLAIM_PERSON_SQL = """
@@ -259,6 +288,7 @@ class ColaImpresionPostgres:
         search: str = "",
         status: str = "all",
         limit: int = 20,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         termino = search.strip()
         patron = f"%{termino}%"
@@ -266,10 +296,32 @@ class ColaImpresionPostgres:
             with conexion.cursor() as cursor:
                 cursor.execute(
                     SEARCH_PEOPLE_SQL,
-                    (status, status, status, termino, patron, limit),
+                    (
+                        status,
+                        status,
+                        status,
+                        status,
+                        termino,
+                        patron,
+                        limit,
+                        offset,
+                    ),
                 )
                 registros = cursor.fetchall()
         return [dict(registro) for registro in registros]
+
+    def contar_personas(self, search: str = "") -> dict[str, int]:
+        termino = search.strip()
+        patron = f"%{termino}%"
+        with self._conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(COUNT_PEOPLE_SQL, (termino, patron))
+                conteos = cursor.fetchone()
+        return {
+            "pending": int(conteos["pending"]),
+            "processing": int(conteos["processing"]),
+            "printed": int(conteos["printed"]),
+        }
 
     def reclamar_persona(self, person_id: Any) -> dict[str, Any] | None:
         """Reserva una persona concreta para impresion o reimpresion manual."""

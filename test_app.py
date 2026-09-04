@@ -193,6 +193,17 @@ class ImpresionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "impresora fisica"):
             imprimir_windows(self.imagen_prueba(), "Microsoft Print to PDF")
 
+    @patch("app._imprimir_windows_sin_bloqueo", return_value="Epson L3310")
+    @patch("app.bloquear_impresora")
+    def test_serializa_el_acceso_a_la_impresora(self, bloquear, imprimir):
+        resultado = imprimir_windows(self.imagen_prueba(), "Epson L3310")
+
+        self.assertEqual(resultado, "Epson L3310")
+        bloquear.assert_called_once_with()
+        bloquear.return_value.__enter__.assert_called_once_with()
+        bloquear.return_value.__exit__.assert_called_once()
+        imprimir.assert_called_once()
+
     @patch("app.ImageWin.Dib")
     @patch("app.win32ui.CreateDC")
     def test_envia_imagen_al_controlador(self, crear_dc, dib):
@@ -555,12 +566,19 @@ class PersonasParaImpresionTests(unittest.TestCase):
                 "print_error": None,
             }
         ]
+        cola.contar_personas.return_value = {
+            "pending": 0,
+            "processing": 0,
+            "printed": 199,
+        }
 
         resultado = api.buscar_personas_para_impresion("Ana", "printed", 10)
 
         self.assertEqual(resultado["count"], 1)
+        self.assertEqual(resultado["counts"]["printed"], 199)
         self.assertEqual(resultado["people"][0]["id"], "persona-1")
-        cola.buscar_personas.assert_called_once_with("Ana", "printed", 10)
+        cola.buscar_personas.assert_called_once_with("Ana", "printed", 10, 0)
+        cola.contar_personas.assert_called_once_with("Ana")
 
     @patch("app.procesar_impresion_manual")
     @patch("print_worker.cargar_url_postgres", return_value="postgresql://test/db")

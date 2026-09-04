@@ -1,7 +1,9 @@
 import json
 import os
 import sqlite3
-from contextlib import closing
+import threading
+import time
+from contextlib import closing, contextmanager
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
@@ -468,14 +470,22 @@ class PersonaParaImpresion(BaseModel):
     phone_number: str | None = None
     email: str | None = None
     consent_at: datetime | None = None
-    print_state: Literal["pending", "printed"]
+    print_state: Literal["pending", "processing", "printed"]
+    print_claimed_at: datetime | None = None
     printed_at: datetime | None = None
     print_error: str | None = None
+
+
+class ConteosPersonasParaImpresion(BaseModel):
+    pending: int
+    processing: int
+    printed: int
 
 
 class ListaPersonasParaImpresion(BaseModel):
     people: list[PersonaParaImpresion]
     count: int
+    counts: ConteosPersonasParaImpresion
 
 
 class ImpresionManualPersona(BaseModel):
@@ -1148,7 +1158,60 @@ def imagen_a_png(imagen: Image.Image) -> bytes:
     return contenido.getvalue()
 
 
-def imprimir_windows(
+_BLOQUEO_HILO_IMPRESORA = threading.Lock()
+
+
+@contextmanager
+def bloquear_impresora(timeout_segundos: float = 120):
+    """Serializa impresiones del API y del worker, incluso en procesos distintos."""
+
+    DIRECTORIO_DATOS.mkdir(exist_ok=True)
+    ruta_bloqueo = DIRECTORIO_DATOS / "printer.lock"
+    inicio = time.monotonic()
+    with _BLOQUEO_HILO_IMPRESORA:
+        with ruta_bloqueo.open("a+b") as archivo:
+            archivo.seek(0, 2)
+            if archivo.tell() == 0:
+                archivo.write(b"0")
+                archivo.flush()
+            bloqueado = False
+            try:
+                while not bloqueado:
+                    archivo.seek(0)
+                    try:
+                        if os.name == "nt":
+                            import msvcrt
+
+                            msvcrt.locking(archivo.fileno(), msvcrt.LK_NBLCK, 1)
+                        else:
+                            import fcntl
+
+                            fcntl.flock(
+                                archivo.fileno(),
+                                fcntl.LOCK_EX | fcntl.LOCK_NB,
+                            )
+                        bloqueado = True
+                    except OSError:
+                        if time.monotonic() - inicio >= timeout_segundos:
+                            raise TimeoutError(
+                                "La impresora sigue ocupada por otro trabajo"
+                            )
+                        time.sleep(0.1)
+                yield
+            finally:
+                if bloqueado:
+                    archivo.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(archivo.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(archivo.fileno(), fcntl.LOCK_UN)
+
+
+def _imprimir_windows_sin_bloqueo(
     imagen: Image.Image,
     printer_name: str | None = None,
     papel_ancho_mm: float = PAPEL_ANCHO_MM,
@@ -1207,6 +1270,21 @@ def imprimir_windows(
         raise
     finally:
         dc.DeleteDC()
+
+
+def imprimir_windows(
+    imagen: Image.Image,
+    printer_name: str | None = None,
+    papel_ancho_mm: float = PAPEL_ANCHO_MM,
+    papel_alto_mm: float = PAPEL_ALTO_MM,
+) -> str:
+    with bloquear_impresora():
+        return _imprimir_windows_sin_bloqueo(
+            imagen,
+            printer_name,
+            papel_ancho_mm,
+            papel_alto_mm,
+        )
 
 
 @app.get(
@@ -1519,19 +1597,21 @@ def listar_impresoras() -> dict[str, list[str] | str | None]:
 def buscar_personas_para_impresion(
     search: Annotated[str, Query(max_length=100)] = "",
     status_filter: Annotated[
-        Literal["all", "pending", "printed"],
+        Literal["all", "pending", "processing", "printed"],
         Query(alias="status"),
     ] = "all",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
     try:
         from print_worker import ColaImpresionPostgres, cargar_url_postgres
 
         cola = ColaImpresionPostgres(cargar_url_postgres())
-        personas = cola.buscar_personas(search, status_filter, limit)
+        personas = cola.buscar_personas(search, status_filter, limit, offset)
+        conteos = cola.contar_personas(search)
         for persona in personas:
             persona["id"] = str(persona["id"])
-        return {"people": personas, "count": len(personas)}
+        return {"people": personas, "count": len(personas), "counts": conteos}
     except Exception as error:
         raise HTTPException(
             status_code=503,
@@ -1861,11 +1941,12 @@ def procesar_impresion(
             )
             actualizar_trabajo_impresion(job_id, "sent")
         else:
-            impresora = enviar_bluetooth(
-                imagen,
-                bluetooth_port,
-                bluetooth_baudrate,
-            )
+            with bloquear_impresora():
+                impresora = enviar_bluetooth(
+                    imagen,
+                    bluetooth_port,
+                    bluetooth_baudrate,
+                )
             actualizar_trabajo_impresion(job_id, "sent")
         return {
             "ok": True,

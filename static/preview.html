@@ -384,7 +384,7 @@
 </head>
 <body>
   <header class="topbar">
-    <span class="brand">NEXUS</span>
+    <span class="brand">NEXUS | TELEINFO</span>
     <span>Servicio local de impresion</span>
   </header>
 
@@ -586,6 +586,22 @@
       return fallback;
     }
 
+    function normalizePerson(data) {
+      const normalized = { ...data };
+      for (const key of [
+        "first_name", "paternal_surname", "maternal_surname",
+        "description", "company", "job_title"
+      ]) {
+        if (typeof normalized[key] === "string") {
+          normalized[key] = normalized[key].trim().toLocaleUpperCase("es");
+        }
+      }
+      if (typeof normalized.email === "string") {
+        normalized.email = normalized.email.trim().toLocaleLowerCase("es");
+      }
+      return normalized;
+    }
+
     function fillForm(data) {
       for (const key of [
         "first_name", "paternal_surname", "maternal_surname", "description",
@@ -643,7 +659,7 @@
         const response = await fetch(`/people?${params}`, { signal: peopleRequest.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(errorMessage(data, "No se pudieron consultar las personas"));
-        renderPeople(data.people);
+        renderPeople(data.people.map(normalizePerson));
       } catch (error) {
         if (error.name === "AbortError") return;
         peopleCount.textContent = "Sin conexion";

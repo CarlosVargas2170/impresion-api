@@ -222,11 +222,18 @@ class SqlWorkerTests(unittest.TestCase):
 
     def test_buscador_incluye_pendientes_e_impresas(self):
         consulta = " ".join(worker.SEARCH_PEOPLE_SQL.split()).upper()
+        conteos = " ".join(worker.COUNT_PEOPLE_SQL.split()).upper()
 
         self.assertIn("PENDING_TO_PRINT = 0", consulta)
+        self.assertIn("PENDING_TO_PRINT = 1 AND PRINTED_AT IS NULL", consulta)
+        self.assertIn("THEN 'PROCESSING'", consulta)
         self.assertIn("PRINTED_AT IS NOT NULL", consulta)
         self.assertIn("ILIKE %S", consulta)
         self.assertIn("LIMIT %S", consulta)
+        self.assertIn("OFFSET %S", consulta)
+        self.assertIn("COUNT(*) FILTER", conteos)
+        self.assertIn("AS PROCESSING", conteos)
+        self.assertIn("AS PRINTED", conteos)
 
 
 if __name__ == "__main__":

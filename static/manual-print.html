@@ -28,12 +28,12 @@
     .brand { font-size: 19px; font-weight: 800; }
     .topbar span:last-child { color: #b9c6c3; font-size: 13px; }
     main {
-      width: min(1120px, calc(100% - 40px));
+      width: min(1180px, calc(100% - 40px));
       margin: 0 auto;
       padding: 32px 0 48px;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-      gap: 48px;
+      grid-template-columns: minmax(0, 1fr) minmax(270px, 350px);
+      gap: clamp(24px, 4vw, 48px);
       align-items: start;
     }
     h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; }
@@ -70,7 +70,7 @@
     }
     .mode input { width: 18px; min-height: 18px; margin: 0; accent-color: #087d6b; }
     .search-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 16px; }
-    .tabs { display: flex; gap: 5px; }
+    .tabs { display: flex; gap: 5px; flex-wrap: wrap; }
     button {
       min-height: 40px;
       padding: 8px 13px;
@@ -83,8 +83,14 @@
     }
     button:hover { background: #066957; }
     button:disabled { cursor: wait; opacity: .6; }
-    .tabs button { color: #53615e; background: #edf1ef; }
+    .tabs button { display: inline-flex; align-items: center; gap: 6px; color: #53615e; background: #edf1ef; }
     .tabs button.active { color: #fff; background: #087d6b; }
+    .tab-count { min-width: 20px; padding: 2px 5px; color: inherit; background: rgb(255 255 255 / 55%); border-radius: 999px; font-size: 10px; text-align: center; }
+    .queue-help { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }
+    .queue-help span { padding: 8px 9px; color: #596663; background: #f7f9f8; border: 1px solid #dce4e1; border-radius: 5px; font-size: 10px; line-height: 1.35; }
+    .queue-help strong { display: block; margin-bottom: 2px; color: #17201f; }
+    .live-status { display: flex; align-items: center; gap: 7px; min-height: 30px; margin-top: 10px; padding: 7px 9px; color: #53615e; background: #e3f1ed; border-radius: 5px; font-size: 11px; }
+    .live-dot { width: 8px; height: 8px; flex: 0 0 auto; background: #12a77a; border-radius: 50%; box-shadow: 0 0 0 4px rgb(18 167 122 / 12%); }
     .results { max-height: 450px; display: grid; gap: 8px; margin-top: 12px; overflow-y: auto; }
     .person {
       display: grid;
@@ -97,12 +103,19 @@
       border-radius: 5px;
     }
     .person.selected { background: #f0faf7; border-color: #087d6b; }
+    .person.processing { background: #fff8df; border-color: #e8bf45; }
     .person-name { display: block; font-size: 13px; font-weight: 800; }
     .person-meta { display: block; margin-top: 3px; color: #71807c; font-size: 11px; }
     .person-actions { display: flex; gap: 6px; }
     .person-actions button { min-height: 34px; padding: 6px 10px; font-size: 11px; }
     .person-actions .select-person { color: #32403d; background: #dce4e1; }
+    .state-pill { display: inline-block; margin-top: 5px; padding: 3px 6px; color: #53615e; background: #e7ecea; border-radius: 999px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+    .state-pill.processing { color: #7a4d00; background: #fff0bd; }
+    .state-pill.printed { color: #067647; background: #dff5ec; }
     .empty { padding: 24px 8px; color: #71807c; font-size: 12px; text-align: center; }
+    .pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e3e8e6; }
+    .pagination button { min-height: 34px; padding: 6px 11px; font-size: 11px; }
+    .pagination-info { color: #596663; font-size: 11px; text-align: center; }
     .status { min-height: 20px; margin: 12px 2px 0; color: #53615e; font-size: 12px; }
     .status.error { color: #b42318; }
     .status.success { color: #067647; }
@@ -158,25 +171,124 @@
     .badge-email { display: block; margin-top: 7px; color: #53615e; font-size: 7px; font-weight: 700; overflow-wrap: anywhere; }
     .badge-qr { width: 28px; height: 28px; margin: 5px auto 0; image-rendering: pixelated; transform: translateX(-8px); }
     .hint { width: min(100%, 270px); padding: 10px 12px; color: #53615e; background: #e7ecea; border-radius: 5px; font-size: 11px; line-height: 1.4; text-align: center; }
+    .paper-help {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+      align-items: center;
+      gap: 22px;
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      color: #32403d;
+      background: #fff8df;
+      border: 1px solid #e8bf45;
+      border-radius: 7px;
+      box-shadow: 0 8px 24px rgb(23 32 31 / 7%);
+    }
+    .paper-help h2 { margin: 0 0 8px; font-size: 15px; }
+    .paper-help p { margin: 0; font-size: 11px; line-height: 1.5; }
+    .paper-help strong { color: #17201f; }
+    .feed-visual { display: grid; justify-items: center; }
+    .feed-sheet {
+      width: 112px;
+      margin: 0 auto;
+      padding: 6px;
+      background: #fff;
+      border: 1px solid #9eaaa7;
+      box-shadow: 0 5px 12px rgb(23 32 31 / 12%);
+    }
+    .feed-arrow { margin-bottom: 6px; color: #067647; font-size: 10px; font-weight: 900; line-height: 1.2; text-align: center; }
+    .feed-slot {
+      height: 58px;
+      position: relative;
+      display: grid;
+      place-items: center;
+      color: #53615e;
+      background: #fafbfa;
+      border: 1px dashed #bcc7c4;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .feed-slot + .feed-slot { border-top: 0; }
+    .feed-slot.example { overflow: hidden; color: #17201f; background: #f0faf7; border-color: #087d6b; }
+    .example-copy {
+      position: absolute;
+      top: 50%;
+      left: 42%;
+      display: grid;
+      gap: 2px;
+      text-align: center;
+      transform: translate(-50%, -50%) rotate(-90deg);
+    }
+    .example-copy strong { font-size: 7px; line-height: 1; white-space: nowrap; }
+    .example-copy small { color: #596663; font-size: 5px; white-space: nowrap; }
+    .example-qr {
+      width: 20px;
+      height: 20px;
+      position: absolute;
+      right: 5px;
+      bottom: 6px;
+      background:
+        linear-gradient(90deg, #17201f 50%, transparent 50%) 0 0 / 5px 5px,
+        linear-gradient(#17201f 50%, transparent 50%) 0 0 / 5px 5px;
+      border: 2px solid #17201f;
+    }
+    .feed-slot-label { position: absolute; top: 3px; left: 4px; color: #71807c; font-size: 7px; }
+    .feed-copy { min-width: 0; }
+    .feed-steps { display: grid; gap: 8px; margin: 12px 0; font-size: 12px; line-height: 1.4; }
+    .feed-result { padding-top: 10px; border-top: 1px solid #e1c96f; }
+    @media (max-width: 980px) {
+      main { grid-template-columns: minmax(0, 1fr) minmax(250px, 300px); }
+      .paper-help { grid-template-columns: 155px minmax(0, 1fr); gap: 16px; }
+    }
     @media (max-width: 820px) {
       .topbar { padding: 0 20px; }
       main { width: min(100% - 28px, 620px); grid-template-columns: 1fr; gap: 34px; padding-top: 24px; }
       .preview-area { position: static; }
+      .paper-help { grid-template-columns: minmax(160px, 200px) minmax(0, 1fr); }
     }
     @media (max-width: 520px) {
-      .controls, .search-row { grid-template-columns: 1fr; }
+      .controls, .search-row, .queue-help { grid-template-columns: 1fr; }
       .full { grid-column: auto; }
       .person { grid-template-columns: 1fr; }
+      .person-actions, .tabs { flex-wrap: wrap; }
       .strip { width: min(100%, 250px); }
+      .paper-help { grid-template-columns: 1fr; }
+      .feed-sheet { width: 126px; }
+      .topbar span:last-child { display: none; }
     }
   </style>
 </head>
 <body>
-  <header class="topbar"><span class="brand">NEXUS</span><span>Consola de impresión manual</span></header>
+  <header class="topbar"><span class="brand">NEXUS | TELEINFO</span><span>Consola de impresión manual</span></header>
   <main>
     <section>
       <h1>Impresión manual</h1>
       <p class="subtitle">Busca una persona, elige la posición y envíala a imprimir.</p>
+      <section class="paper-help" aria-labelledby="paperHelpTitle">
+        <div class="feed-visual">
+          <div class="feed-arrow">↑ ESTE EXTREMO ENTRA PRIMERO</div>
+          <div class="feed-sheet" aria-label="Ejemplo de carga: la posición 3 entra primero, seguida por la 2 y la 1">
+            <div class="feed-slot example">
+              <span class="feed-slot-label">POS. 3</span>
+              <span class="example-copy"><strong>ANA PÉREZ</strong><small>NEXUS</small><small>ana@ejemplo.com</small></span>
+              <span class="example-qr" aria-hidden="true"></span>
+            </div>
+            <div class="feed-slot">POSICIÓN 2</div>
+            <div class="feed-slot">POSICIÓN 1</div>
+          </div>
+        </div>
+        <div class="feed-copy">
+          <h2 id="paperHelpTitle">Orientación para cargar el papel</h2>
+          <p>Usa el texto de ejemplo para reconocer el sentido correcto de la tira antes de imprimir.</p>
+          <div class="feed-steps">
+            <span><strong>1.</strong> Coloca la tira vertical.</span>
+            <span><strong>2.</strong> Introduce primero el extremo de la posición 3, como muestra el dibujo.</span>
+            <span><strong>3.</strong> Mantén esta misma orientación para las siguientes impresiones.</span>
+          </div>
+          <p class="feed-result"><strong>Resultado:</strong> al retirar la tira, gírala 180°. Con el QR a la izquierda, leerás las posiciones 1, 2 y 3 de arriba hacia abajo.</p>
+        </div>
+      </section>
       <div class="panel">
         <div class="controls">
           <label>Posición en la tira
@@ -189,9 +301,24 @@
         </div>
         <div class="search-row">
           <input id="search" type="search" placeholder="Buscar nombre, empresa, correo o teléfono" autocomplete="off" aria-label="Buscar personas">
-          <div class="tabs"><button type="button" class="active" data-status="pending">Por imprimir</button><button type="button" data-status="printed">Impresas</button></div>
+          <div class="tabs">
+            <button type="button" class="active" data-status="pending">Por imprimir <span class="tab-count" data-count="pending">0</span></button>
+            <button type="button" data-status="processing">Procesando <span class="tab-count" data-count="processing">0</span></button>
+            <button type="button" data-status="printed">Impresas <span class="tab-count" data-count="printed">0</span></button>
+          </div>
         </div>
+        <div class="queue-help" aria-label="Ayuda de estados de impresión">
+          <span><strong>Por imprimir</strong>Registros nuevos disponibles para el worker o para impresión manual.</span>
+          <span><strong>Procesando</strong>La persona ya fue reservada. Ningún otro proceso puede tomarla al mismo tiempo.</span>
+          <span><strong>Impresas</strong>Trabajos terminados. Desde aquí puedes seleccionar una persona para reimprimirla.</span>
+        </div>
+        <div class="live-status" role="status" aria-live="polite"><span class="live-dot"></span><span id="liveStatus">Conectando con la cola de impresión...</span></div>
         <div id="results" class="results" aria-live="polite"><div class="empty">Buscando personas...</div></div>
+        <nav class="pagination" aria-label="Paginación de personas">
+          <button id="previousPage" type="button">Anterior</button>
+          <span id="pageInfo" class="pagination-info">Página 1 de 1</span>
+          <button id="nextPage" type="button">Siguiente</button>
+        </nav>
         <div id="status" class="status" role="status" aria-live="polite"></div>
       </div>
     </section>
@@ -215,6 +342,11 @@
     const strip = document.querySelector("#strip");
     const dimensions = document.querySelector("#dimensions");
     const tabs = [...document.querySelectorAll("[data-status]")];
+    const countNodes = [...document.querySelectorAll("[data-count]")];
+    const liveStatus = document.querySelector("#liveStatus");
+    const previousPage = document.querySelector("#previousPage");
+    const nextPage = document.querySelector("#nextPage");
+    const pageInfo = document.querySelector("#pageInfo");
     const slots = [...document.querySelectorAll(".strip-slot")];
     let filter = "pending";
     let people = [];
@@ -222,6 +354,11 @@
     let sending = false;
     let request = null;
     let debounce = null;
+    let firstSync = true;
+    let knownStates = new Map();
+    let queueCounts = { pending: 0, processing: 0, printed: 0 };
+    let page = 1;
+    const pageSize = 10;
     const printedSlots = [null, null, null];
 
     function escapeHtml(value = "") {
@@ -231,6 +368,21 @@
       if (typeof data?.detail === "string") return data.detail;
       if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg).join(". ");
       return fallback;
+    }
+    function normalizePerson(data) {
+      const normalized = { ...data };
+      for (const key of [
+        "first_name", "paternal_surname", "maternal_surname",
+        "description", "company", "job_title"
+      ]) {
+        if (typeof normalized[key] === "string") {
+          normalized[key] = normalized[key].trim().toLocaleUpperCase("es");
+        }
+      }
+      if (typeof normalized.email === "string") {
+        normalized.email = normalized.email.trim().toLocaleLowerCase("es");
+      }
+      return normalized;
     }
     function badgeMarkup(data) {
       if (!data) return '<span class="badge-empty">Disponible</span>';
@@ -249,21 +401,59 @@
       }
     }
     function renderPeople() {
-      if (!people.length) {
-        results.innerHTML = '<div class="empty">No hay personas que coincidan.</div>';
+      for (const node of countNodes) {
+        node.textContent = String(queueCounts[node.dataset.count] || 0);
+      }
+      const total = queueCounts[filter] || 0;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      page = Math.min(page, totalPages);
+      pageInfo.textContent = `Página ${page} de ${totalPages} · ${total} registro${total === 1 ? "" : "s"}`;
+      previousPage.disabled = sending || page <= 1;
+      nextPage.disabled = sending || page >= totalPages;
+      const visiblePeople = people.filter(person => person.print_state === filter);
+      if (!visiblePeople.length) {
+        const messages = {
+          pending: "No hay personas esperando impresión.",
+          processing: "No hay personas procesándose en este momento.",
+          printed: "Todavía no hay personas impresas."
+        };
+        results.innerHTML = `<div class="empty">${messages[filter]}</div>`;
         return;
       }
-      results.innerHTML = people.map(person => {
+      results.innerHTML = visiblePeople.map(person => {
         const name = [person.first_name, person.paternal_surname, person.maternal_surname].filter(Boolean).join(" ");
         const meta = [person.company, person.email, person.phone_number].filter(Boolean).join(" · ");
-        const action = person.print_state === "printed" ? "Reimprimir" : "Imprimir";
-        return `<article class="person${selected?.id === person.id ? " selected" : ""}" data-id="${escapeHtml(person.id)}"><span><span class="person-name">${escapeHtml(name || "Sin nombre")}</span><span class="person-meta">${escapeHtml(meta || "Sin datos adicionales")}</span></span><span class="person-actions"><button type="button" class="select-person">Ver</button><button type="button" class="print-person">${action}</button></span></article>`;
+        const processing = person.print_state === "processing";
+        const labels = { pending: "Por imprimir", processing: "Procesando", printed: "Impresa" };
+        const action = person.print_state === "printed" ? "Reimprimir" : processing ? "En proceso" : "Imprimir";
+        return `<article class="person${selected?.id === person.id ? " selected" : ""}${processing ? " processing" : ""}" data-id="${escapeHtml(person.id)}"><span><span class="person-name">${escapeHtml(name || "Sin nombre")}</span><span class="person-meta">${escapeHtml(meta || "Sin datos adicionales")}</span><span class="state-pill ${person.print_state}">${labels[person.print_state]}</span></span><span class="person-actions"><button type="button" class="select-person">Ver</button><button type="button" class="print-person"${processing ? " disabled" : ""}>${action}</button></span></article>`;
       }).join("");
       for (const row of results.querySelectorAll(".person")) {
-        const person = people.find(item => String(item.id) === row.dataset.id);
+        const person = visiblePeople.find(item => String(item.id) === row.dataset.id);
         row.querySelector(".select-person").addEventListener("click", () => selectPerson(person));
-        row.querySelector(".print-person").addEventListener("click", () => printPerson(person));
+        const printButton = row.querySelector(".print-person");
+        if (!printButton.disabled) printButton.addEventListener("click", () => printPerson(person));
       }
+    }
+    function updateLiveActivity(nextPeople, nextCounts) {
+      const nextStates = new Map(nextPeople.map(person => [String(person.id), person.print_state]));
+      let message = "Cola sincronizada en tiempo real.";
+      if (!firstSync) {
+        const newlyArrived = nextPeople.find(person => !knownStates.has(String(person.id)) && person.print_state === "pending");
+        const nowProcessing = nextPeople.find(person => (!knownStates.has(String(person.id)) || knownStates.get(String(person.id)) === "pending") && person.print_state === "processing");
+        const nowPrinted = nextPeople.find(person => knownStates.has(String(person.id)) && knownStates.get(String(person.id)) !== "printed" && person.print_state === "printed");
+        if (nowPrinted || nextCounts.printed > queueCounts.printed) {
+          message = `${nowPrinted?.first_name || "Una persona"} terminó de imprimirse.`;
+        } else if (nowProcessing || nextCounts.processing > queueCounts.processing) {
+          message = `${nowProcessing?.first_name || "Una persona"} fue tomada por el worker o la impresión manual y está siendo procesada.`;
+        } else if (newlyArrived || nextCounts.pending > queueCounts.pending) {
+          message = `Nuevo registro recibido: ${newlyArrived?.first_name || "sin nombre"}.`;
+        }
+      }
+      knownStates = nextStates;
+      queueCounts = nextCounts;
+      firstSync = false;
+      liveStatus.textContent = `${message} · ${new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
     }
     function selectPerson(person) {
       selected = person;
@@ -272,23 +462,51 @@
     }
     async function loadPeople() {
       if (sending) return;
-      if (request) request.abort();
-      request = new AbortController();
-      const params = new URLSearchParams({ search: search.value.trim(), status: filter, limit: "30" });
+      if (request) return;
+      const currentRequest = new AbortController();
+      request = currentRequest;
+      const params = new URLSearchParams({
+        search: search.value.trim(),
+        status: filter,
+        limit: String(pageSize),
+        offset: String((page - 1) * pageSize)
+      });
       try {
-        const response = await fetch(`/people?${params}`, { signal: request.signal });
+        const response = await fetch(`/people?${params}`, { signal: currentRequest.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(errorMessage(data, "No se pudieron consultar las personas"));
-        people = data.people;
+        people = data.people.map(normalizePerson);
+        const counts = data.counts || {
+          pending: people.filter(person => person.print_state === "pending").length,
+          processing: people.filter(person => person.print_state === "processing").length,
+          printed: people.filter(person => person.print_state === "printed").length
+        };
+        updateLiveActivity(people, counts);
+        if (!data.counts) {
+          liveStatus.textContent = "Vista compatible activa. Reinicia la API para mostrar los totales completos.";
+        }
         renderPeople();
       } catch (error) {
         if (error.name === "AbortError") return;
+        liveStatus.textContent = "Sin conexión con la cola de impresión.";
         results.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      } finally {
+        if (request === currentRequest) request = null;
       }
+    }
+    function refreshPeople() {
+      if (request) {
+        request.abort();
+        request = null;
+      }
+      loadPeople();
     }
     async function printPerson(person) {
       selectPerson(person);
       sending = true;
+      person.print_state = "processing";
+      liveStatus.textContent = `${person.first_name || "La persona"} está siendo procesada por impresión manual.`;
+      renderPeople();
       results.querySelectorAll("button").forEach(button => { button.disabled = true; });
       statusBox.className = "status";
       statusBox.textContent = simulation.checked ? "Generando simulación..." : "Enviando a impresora...";
@@ -346,15 +564,17 @@
         }
       } catch (_) {}
     }
-    search.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(loadPeople, 250); });
+    search.addEventListener("input", () => { page = 1; clearTimeout(debounce); debounce = setTimeout(refreshPeople, 250); });
     position.addEventListener("change", renderStrip);
     for (const slot of slots) slot.addEventListener("click", () => { position.value = slot.dataset.position; renderStrip(); });
-    for (const tab of tabs) tab.addEventListener("click", () => { filter = tab.dataset.status; tabs.forEach(item => item.classList.toggle("active", item === tab)); loadPeople(); });
+    for (const tab of tabs) tab.addEventListener("click", () => { filter = tab.dataset.status; page = 1; tabs.forEach(item => item.classList.toggle("active", item === tab)); people = []; renderPeople(); refreshPeople(); });
+    previousPage.addEventListener("click", () => { if (page > 1) { page -= 1; people = []; renderPeople(); refreshPeople(); } });
+    nextPage.addEventListener("click", () => { const totalPages = Math.max(1, Math.ceil((queueCounts[filter] || 0) / pageSize)); if (page < totalPages) { page += 1; people = []; renderPeople(); refreshPeople(); } });
     loadPrinters();
     loadLayout();
     loadPeople();
     renderStrip();
-    setInterval(loadPeople, 3000);
+    setInterval(loadPeople, 1000);
   </script>
 </body>
 </html>
