@@ -67,13 +67,17 @@ class ConfiguracionWorkerTests(unittest.TestCase):
 class ProcesamientoWorkerTests(unittest.TestCase):
     def test_mapea_persona_al_formulario_actual(self):
         formulario = worker.formulario_desde_persona(
-            persona_valida(),
+            persona_valida(email="Ana.Perez@EJEMPLO.COM"),
             "EPSON L3310 Series",
         )
 
-        self.assertEqual(formulario.first_name, "Ana")
-        self.assertEqual(formulario.paternal_surname, "Perez")
-        self.assertEqual(formulario.company, "Nexus")
+        self.assertEqual(formulario.first_name, "ANA")
+        self.assertEqual(formulario.paternal_surname, "PEREZ")
+        self.assertEqual(formulario.maternal_surname, "LOPEZ")
+        self.assertEqual(formulario.description, "INVITADA VIP")
+        self.assertEqual(formulario.company, "NEXUS")
+        self.assertEqual(formulario.job_title, "GERENTE COMERCIAL")
+        self.assertEqual(formulario.email, "ana.perez@ejemplo.com")
         self.assertEqual(formulario.printer_name, "EPSON L3310 Series")
 
     def test_no_valida_los_datos_que_provienen_de_postgres(self):

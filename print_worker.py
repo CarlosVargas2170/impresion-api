@@ -79,6 +79,15 @@ FORM_FIELDS = (
     "consent_at",
 )
 
+UPPERCASE_FORM_FIELDS = (
+    "first_name",
+    "paternal_surname",
+    "maternal_surname",
+    "description",
+    "company",
+    "job_title",
+)
+
 
 def _configuracion_archivo() -> dict[str, Any]:
     if not RUTA_CONFIG.exists():
@@ -201,6 +210,11 @@ def formulario_desde_persona(
     printer_name: str | None = None,
 ) -> Formulario:
     datos = {campo: persona.get(campo) for campo in FORM_FIELDS}
+    for campo in UPPERCASE_FORM_FIELDS:
+        if isinstance(datos[campo], str):
+            datos[campo] = datos[campo].strip().upper()
+    if isinstance(datos["email"], str):
+        datos["email"] = datos["email"].strip().lower()
     datos["printer_name"] = printer_name
     # Los registros de PostgreSQL son la fuente de impresion. Se construye el
     # modelo sin ejecutar validadores para no rechazar correos reservados, telefonos
